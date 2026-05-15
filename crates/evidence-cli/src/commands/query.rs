@@ -1,11 +1,14 @@
 //! `evidence query <text>`: thin wrapper around
 //! [`evidence_core::query::answer_query`] plus a stdout formatter.
 
-use evidence_core::query::{answer_query, Answer, LlmBackend, QueryError};
+use evidence_core::query::{answer_query, Answer, LlmBackend, QueryError, SupportChecker};
 use evidence_core::retrieval::Embedder;
 use evidence_core::storage::Storage;
 
 /// Run the query command end-to-end. Returns the validated [`Answer`].
+///
+/// Pass `Some(checker)` to enable the citation lexical-support check;
+/// `None` preserves v0.1.0 behavior (existence + in-context rules only).
 ///
 /// # Errors
 ///
@@ -14,10 +17,11 @@ pub fn run(
     storage: &Storage,
     embedder: &dyn Embedder,
     llm: &dyn LlmBackend,
+    support: Option<&dyn SupportChecker>,
     question: &str,
     k: usize,
 ) -> Result<Answer, QueryError> {
-    answer_query(storage, embedder, llm, question, k)
+    answer_query(storage, embedder, llm, question, k, support)
 }
 
 /// Render an [`Answer`] in the human-readable CLI format. One sentence per

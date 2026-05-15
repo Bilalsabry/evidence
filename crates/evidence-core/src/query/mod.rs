@@ -20,7 +20,12 @@ use thiserror::Error;
 use crate::retrieval::{hybrid_search, Embedder, HybridError};
 use crate::storage::Storage;
 
+pub mod support;
 pub mod testing;
+
+pub use support::{
+    RerankerSupportChecker, SupportChecker, SupportError, SupportVerdict, SUPPORTED_THRESHOLD,
+};
 
 /// One context chunk shown to the LLM.
 ///
@@ -112,12 +117,16 @@ pub enum QueryError {
     Llm(#[from] LlmError),
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Support(#[from] SupportError),
     #[error("model produced a sentence with no citation: {sentence}")]
     Uncited { sentence: String },
     #[error("model cited span {span_id}, which was not in the chunks shown")]
     OutOfContext { span_id: i64 },
     #[error("model cited span {span_id}, which is not in the database")]
     UnknownSpan { span_id: i64 },
+    #[error("cited spans do not lexically support the sentence: {sentence}")]
+    Unsupported { sentence: String },
 }
 
 /// Full query pipeline: retrieve → prompt LLM → validate citations →
@@ -134,6 +143,7 @@ pub fn answer_query(
     llm: &dyn LlmBackend,
     question: &str,
     k: usize,
+    support: Option<&dyn SupportChecker>,
 ) -> Result<Answer, QueryError> {
     let hits = hybrid_search(storage.conn(), embedder, question, k)?;
 
@@ -162,13 +172,14 @@ pub fn answer_query(
     };
 
     let raw = llm.answer(&prompt)?;
-    validate_and_resolve(storage, &raw, &allowed_spans)
+    validate_and_resolve(storage, &raw, &allowed_spans, support)
 }
 
 fn validate_and_resolve(
     storage: &Storage,
     raw: &RawAnswer,
     allowed_spans: &HashMap<i64, ()>,
+    support: Option<&dyn SupportChecker>,
 ) -> Result<Answer, QueryError> {
     let mut out = Vec::with_capacity(raw.sentences.len());
     for sentence in &raw.sentences {
@@ -178,12 +189,28 @@ fn validate_and_resolve(
             });
         }
         let mut citations = Vec::with_capacity(sentence.span_ids.len());
+        let mut cited_texts: Vec<String> = Vec::with_capacity(sentence.span_ids.len());
         for span_id in &sentence.span_ids {
             if !allowed_spans.contains_key(span_id) {
                 return Err(QueryError::OutOfContext { span_id: *span_id });
             }
-            citations.push(resolve_citation(storage, *span_id)?);
+            let (citation, text) = resolve_citation_with_text(storage, *span_id)?;
+            citations.push(citation);
+            cited_texts.push(text);
         }
+
+        if let Some(checker) = support {
+            let refs: Vec<&str> = cited_texts.iter().map(String::as_str).collect();
+            match checker.check(&sentence.text, &refs)? {
+                SupportVerdict::Supports => {}
+                SupportVerdict::Insufficient => {
+                    return Err(QueryError::Unsupported {
+                        sentence: sentence.text.clone(),
+                    });
+                }
+            }
+        }
+
         out.push(Sentence {
             text: sentence.text.clone(),
             citations,
@@ -192,9 +219,12 @@ fn validate_and_resolve(
     Ok(Answer { sentences: out })
 }
 
-fn resolve_citation(storage: &Storage, span_id: i64) -> Result<Citation, QueryError> {
+fn resolve_citation_with_text(
+    storage: &Storage,
+    span_id: i64,
+) -> Result<(Citation, String), QueryError> {
     let row = storage.conn().query_row(
-        "SELECT spans.start_offset, spans.end_offset, \
+        "SELECT spans.start_offset, spans.end_offset, spans.text, \
                 pages.page_num, pages.doc_id \
          FROM spans \
          JOIN pages ON pages.id = spans.page_id \
@@ -204,19 +234,23 @@ fn resolve_citation(storage: &Storage, span_id: i64) -> Result<Citation, QueryEr
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, i64>(1)?,
-                r.get::<_, i64>(2)?,
+                r.get::<_, String>(2)?,
                 r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
             ))
         },
     );
     match row {
-        Ok((start, end, page_num, doc_id)) => Ok(Citation {
-            span_id,
-            doc_id,
-            page_num: u32::try_from(page_num).unwrap_or(0),
-            start_offset: usize::try_from(start).unwrap_or(0),
-            end_offset: usize::try_from(end).unwrap_or(0),
-        }),
+        Ok((start, end, text, page_num, doc_id)) => Ok((
+            Citation {
+                span_id,
+                doc_id,
+                page_num: u32::try_from(page_num).unwrap_or(0),
+                start_offset: usize::try_from(start).unwrap_or(0),
+                end_offset: usize::try_from(end).unwrap_or(0),
+            },
+            text,
+        )),
         Err(rusqlite::Error::QueryReturnedNoRows) => Err(QueryError::UnknownSpan { span_id }),
         Err(other) => Err(QueryError::Sqlite(other)),
     }

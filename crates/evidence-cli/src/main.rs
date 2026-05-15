@@ -16,8 +16,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_cli::commands::{ingest, query as query_cmd};
 use evidence_cli::ollama::OllamaBackend;
-use evidence_core::query::LlmBackend;
-use evidence_core::retrieval::BgeSmall;
+use evidence_core::query::{LlmBackend, RerankerSupportChecker, SupportChecker};
+use evidence_core::retrieval::{BgeReranker, BgeSmall};
 use evidence_core::storage::Storage;
 
 #[derive(Parser)]
@@ -58,6 +58,10 @@ enum Command {
         /// Ollama model name.
         #[arg(long, default_value_t = evidence_cli::ollama::DEFAULT_MODEL.to_string())]
         model: String,
+        /// Enable the citation lexical-support check. First use downloads
+        /// `bge-reranker-base` (~280 MB).
+        #[arg(long)]
+        check_support: bool,
     },
 }
 
@@ -95,11 +99,31 @@ fn real_main() -> Result<ExitCode> {
             k,
             ollama_url,
             model,
+            check_support,
         } => {
             let storage = Storage::open(&cli.db).context("opening evidence index")?;
             let embedder = BgeSmall::new().context("initializing bge-small embedder")?;
             let llm: Box<dyn LlmBackend> = Box::new(OllamaBackend::new(ollama_url, model));
-            match query_cmd::run(&storage, &embedder, llm.as_ref(), &question, k) {
+
+            // The support checker borrows the reranker, so both have to
+            // live for the duration of the call.
+            let reranker = if check_support {
+                Some(BgeReranker::new().context("initializing bge-reranker-base")?)
+            } else {
+                None
+            };
+            let checker: Option<Box<dyn SupportChecker>> = reranker
+                .as_ref()
+                .map(|r| Box::new(RerankerSupportChecker::new(r)) as Box<dyn SupportChecker>);
+
+            match query_cmd::run(
+                &storage,
+                &embedder,
+                llm.as_ref(),
+                checker.as_deref(),
+                &question,
+                k,
+            ) {
                 Ok(answer) => {
                     print!("{}", query_cmd::format_answer(&answer));
                     Ok(ExitCode::SUCCESS)

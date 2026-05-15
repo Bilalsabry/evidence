@@ -48,4 +48,13 @@ jobs:
             .fastembed_cache
             ~/.cache/fastembed
           key: fastembed-bge-small-v1.5+reranker-base-v2
+      # Cache the pdfium-binaries shared library that `pdfium-auto`
+      # downloads on first use. Avoids hitting GitHub Releases every CI run
+      # — both for speed and to dodge transient 5xx / rate limits from the
+      # runner network.
+      - name: Cache pdfium binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pdf2md
+          key: pdfium-auto-v0.3-chromium-7690
       - run: cargo test --workspace --all-targets
