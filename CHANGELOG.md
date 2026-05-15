@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `apps/desktop` — Tauri 2 shell over `evidence-core`. Vite + React + TS
+  frontend, three Tauri commands (`app_version`, `ingest`, `query`), a
+  default capability scoped to the main window, and a smoke screen that
+  pings the core's version. Excluded from `default-members` so the
+  default `cargo build`/`cargo test` and CI both skip it; explicit
+  opt-in via `cargo run -p evidence-desktop` or `cargo tauri dev` from
+  `apps/desktop/`.
+- `IngestSummary` now derives `Serialize` + `Deserialize` so it
+  round-trips through the Tauri IPC layer (#18).
 - `retrieval::Reranker` trait + `BgeReranker` (`bge-reranker-base` via
   `fastembed`, model auto-downloads on first construction).
 - `retrieval::hybrid_search_with_reranker` runs hybrid retrieval, then

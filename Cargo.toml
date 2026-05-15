@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["crates/*", "apps/desktop"]
+# `default-members` is the set Cargo builds when no `-p` or `--workspace`
+# is given. `apps/desktop` is excluded because it pulls in WebView /
+# system-graphics deps that don't belong in `cargo build`/`cargo test` on
+# every dev machine and CI runner. Explicit opt-in via `cargo run -p
+# evidence-desktop` (or `cargo tauri dev` from `apps/desktop/`).
+default-members = ["crates/evidence-core", "crates/evidence-api", "crates/evidence-cli"]
 
 [workspace.package]
 version = "0.0.1"
