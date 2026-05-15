@@ -26,8 +26,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
     fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, render_for_pdf,
-    render_report, run_with_mode, write_markdown, AuthorOptions, FetchConfig, InjectionConfig,
-    Report, SupportMode, UreqClient,
+    render_report, render_stats, run_with_mode, write_markdown, AuthorOptions, DatasetStats,
+    FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -76,6 +76,13 @@ enum Command {
     /// catch wrong-class structure, fabricated spans that aren't
     /// fabricated, etc.
     Lint {
+        /// Path to a TOML eval dataset.
+        dataset: PathBuf,
+    },
+    /// Print descriptive stats for a dataset: class balance, per-example
+    /// shape, and what `inject` will materialize. Read-only; never fails
+    /// on a parseable dataset.
+    Stats {
         /// Path to a TOML eval dataset.
         dataset: PathBuf,
     },
@@ -142,6 +149,7 @@ fn real_main() -> Result<ExitCode> {
             } => fetch_dailymed_command(&output, limit, delay_ms),
         },
         Command::Lint { dataset } => lint_command(&dataset),
+        Command::Stats { dataset } => stats_command(&dataset),
         Command::Author {
             pdf,
             page,
@@ -149,6 +157,13 @@ fn real_main() -> Result<ExitCode> {
             class,
         } => author_command(&pdf, page, name, class),
     }
+}
+
+fn stats_command(dataset_path: &std::path::Path) -> Result<ExitCode> {
+    let dataset = load_dataset(dataset_path).context("loading dataset for stats")?;
+    let stats = DatasetStats::compute(&dataset);
+    print!("{}", render_stats(&stats));
+    Ok(ExitCode::SUCCESS)
 }
 
 fn author_command(

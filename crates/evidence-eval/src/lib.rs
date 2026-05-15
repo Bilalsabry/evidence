@@ -22,6 +22,7 @@ pub mod inject;
 pub mod lint;
 pub mod report;
 pub mod runner;
+pub mod stats;
 
 pub use author::{render_for_pdf, render_template, AuthorError, AuthorOptions};
 pub use dataset::{load_dataset, Dataset, Example, HallucinationClass, SupportMutation};
@@ -33,3 +34,4 @@ pub use inject::{
 pub use lint::{has_errors, lint, render_report, Diagnostic, Severity};
 pub use report::{write_markdown, Report};
 pub use runner::{run, run_with_mode, Outcome, Policy, RunResult, SupportMode};
+pub use stats::{render_stats, DatasetStats, Dist};
