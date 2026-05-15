@@ -43,7 +43,7 @@ fn nli_cross_encoder_classifies_all_three_verdicts() {
 #[test]
 fn nli_support_checker_aggregates_strict_wins() {
     let encoder = NliCrossEncoder::shared().expect("nli encoder");
-    let checker = NliSupportChecker::new(&encoder);
+    let checker = NliSupportChecker::new(encoder);
 
     // Two supporting + one contradicting → Contradicts must win.
     let sentence = "The trial enrolled 240 patients.";
@@ -82,7 +82,7 @@ fn nli_support_checker_aggregates_strict_wins() {
 #[test]
 fn nli_support_checker_returns_neutral_for_no_citations() {
     let encoder = NliCrossEncoder::shared().expect("nli encoder");
-    let checker = NliSupportChecker::new(&encoder);
+    let checker = NliSupportChecker::new(encoder);
     let v = checker
         .check("anything goes", &[])
         .expect("empty cited_texts is documented as Neutral");
