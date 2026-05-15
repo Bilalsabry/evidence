@@ -23,6 +23,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "2", default-features = false, features = ["json", "tls"] }
 
+[features]
+# Opt-in integration tests that exercise `OllamaBackend` against a local
+# stub HTTP server. Tests that require this feature `#[cfg]`-gate
+# themselves; leaving the feature off skips them entirely.
+ollama-integration-tests = []
+
 [dev-dependencies]
 pdf-writer = "0.14"
 tempfile = "3"
+tiny_http = "0.12"

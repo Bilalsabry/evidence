@@ -58,3 +58,12 @@ jobs:
           path: ~/.cache/pdf2md
           key: pdfium-auto-v0.3-chromium-7690
       - run: cargo test --workspace --all-targets
+
+  test-ollama:
+    name: test-ollama
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p evidence-cli --features ollama-integration-tests --test ollama_integration
