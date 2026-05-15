@@ -23,6 +23,40 @@ use crate::storage::{Storage, StorageError};
 /// per token).
 pub const MAX_CHUNK_BYTES: usize = 1024;
 
+/// Coarse stages of [`ingest_pdf`]. The current implementation emits
+/// one `step` per stage transition; finer-grained per-page progress
+/// is a follow-up that needs `pdf::extract` to take a callback too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngestStage {
+    /// Reading the file and computing its SHA-256.
+    Hashing,
+    /// PDFium parsing the document into pages + spans.
+    Parsing,
+    /// Writing pages, spans, and chunks into SQLite.
+    Persisting,
+    /// Running the embedder over the chunks.
+    Embedding,
+    /// Last call before [`ingest_pdf`] returns successfully.
+    Done,
+}
+
+/// Optional progress callback for long-running ingest work.
+///
+/// `(current, total)` is the position within the stage. When the stage's
+/// granularity is coarse (e.g., `Hashing` is one step), `current = total
+/// = 1`. The trait is `Send + Sync` so the desktop app can hand a
+/// channel-backed implementation to a background thread.
+pub trait IngestProgress: Send + Sync {
+    fn step(&self, stage: IngestStage, current: usize, total: usize);
+}
+
+/// No-op implementation for callers that don't care about progress.
+/// Match the standard "pass `None` to skip" pattern with `&NoIngestProgress`.
+pub struct NoIngestProgress;
+impl IngestProgress for NoIngestProgress {
+    fn step(&self, _stage: IngestStage, _current: usize, _total: usize) {}
+}
+
 /// Summary of an ingest run, returned to the caller for logging or display.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IngestSummary {
@@ -73,9 +107,34 @@ pub fn ingest_pdf<P: AsRef<Path>>(
     path: P,
     title: Option<&str>,
 ) -> Result<IngestSummary, IngestError> {
+    ingest_pdf_with_progress(storage, embedder, path, title, None)
+}
+
+/// Same as [`ingest_pdf`] but reports stage transitions through the
+/// supplied [`IngestProgress`] callback. The desktop app uses this to
+/// drive a progress bar; the CLI calls [`ingest_pdf`] (no callback).
+///
+/// # Errors
+///
+/// See [`ingest_pdf`].
+pub fn ingest_pdf_with_progress<P: AsRef<Path>>(
+    storage: &mut Storage,
+    embedder: &dyn Embedder,
+    path: P,
+    title: Option<&str>,
+    progress: Option<&dyn IngestProgress>,
+) -> Result<IngestSummary, IngestError> {
+    let report = |stage: IngestStage, current: usize, total: usize| {
+        if let Some(p) = progress {
+            p.step(stage, current, total);
+        }
+    };
+
     let path = path.as_ref();
+    report(IngestStage::Hashing, 0, 1);
     let bytes = std::fs::read(path)?;
     let sha = sha256_hex(&bytes);
+    report(IngestStage::Hashing, 1, 1);
 
     // Refuse to ingest the same document twice — keeps the SHA-unique index
     // honest and gives the caller a clear signal.
@@ -83,7 +142,9 @@ pub fn ingest_pdf<P: AsRef<Path>>(
         return Err(IngestError::Duplicate { sha: existing });
     }
 
+    report(IngestStage::Parsing, 0, 1);
     let pages = pdf::extract(path)?;
+    report(IngestStage::Parsing, 1, 1);
     let now_ms = i64::try_from(
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -101,16 +162,20 @@ pub fn ingest_pdf<P: AsRef<Path>>(
         tx.last_insert_rowid()
     };
 
-    let (span_count, chunks) = write_pages_spans_chunks(&tx, doc_id, &pages)?;
+    report(IngestStage::Persisting, 0, pages.len());
+    let (span_count, chunks) = write_pages_spans_chunks(&tx, doc_id, &pages, &report)?;
+    report(IngestStage::Persisting, pages.len(), pages.len());
 
     // Embed all chunks in one batch. fastembed parallelizes internally; one
     // batch call is much faster than one-per-chunk.
     let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
+    report(IngestStage::Embedding, 0, texts.len());
     let embeddings = if texts.is_empty() {
         Vec::new()
     } else {
         embedder.embed_batch(&texts)?
     };
+    report(IngestStage::Embedding, texts.len(), texts.len());
 
     for (chunk, embedding) in chunks.iter().zip(embeddings.iter()) {
         upsert_chunk_embedding(&tx, chunk.id, embedding).map_err(|e| match e {
@@ -119,6 +184,7 @@ pub fn ingest_pdf<P: AsRef<Path>>(
     }
 
     tx.commit()?;
+    report(IngestStage::Done, 1, 1);
 
     Ok(IngestSummary {
         document_id: doc_id,
@@ -156,15 +222,21 @@ struct InsertedChunk {
     text: String,
 }
 
-fn write_pages_spans_chunks(
+fn write_pages_spans_chunks<F>(
     tx: &rusqlite::Transaction<'_>,
     doc_id: i64,
     pages: &[Page],
-) -> Result<(usize, Vec<InsertedChunk>), IngestError> {
+    report: &F,
+) -> Result<(usize, Vec<InsertedChunk>), IngestError>
+where
+    F: Fn(IngestStage, usize, usize),
+{
+    let total_pages = pages.len();
     let mut total_spans = 0usize;
     let mut chunks: Vec<InsertedChunk> = Vec::new();
 
-    for page in pages {
+    for (page_idx, page) in pages.iter().enumerate() {
+        report(IngestStage::Persisting, page_idx, total_pages);
         tx.execute(
             "INSERT INTO pages (doc_id, page_num, raw_text) VALUES (?, ?, ?)",
             params![doc_id, page.page_num as i64, &page.raw_text],

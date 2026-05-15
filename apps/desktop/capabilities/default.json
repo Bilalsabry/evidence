@@ -4,6 +4,8 @@
   "description": "Default capability for the main evidence window — allows the frontend to invoke our three commands.",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:event:default",
+    "dialog:default"
   ]
 }

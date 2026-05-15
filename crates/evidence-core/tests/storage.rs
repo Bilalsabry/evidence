@@ -180,6 +180,42 @@ fn chunks_roundtrip() {
 }
 
 #[test]
+fn list_documents_returns_newest_first() {
+    let storage = fresh();
+    storage
+        .conn()
+        .execute_batch(
+            "INSERT INTO documents (sha256, title, page_count, ingested_at) \
+                  VALUES ('a', 'first',  10, 100);
+             INSERT INTO documents (sha256, title, page_count, ingested_at) \
+                  VALUES ('b', 'second', 20, 200);
+             INSERT INTO documents (sha256, title, page_count, ingested_at) \
+                  VALUES ('c',  NULL,    30, 300);",
+        )
+        .unwrap();
+
+    let all = storage.list_documents(10, 0).unwrap();
+    assert_eq!(all.len(), 3);
+    assert_eq!(all[0].sha256, "c");
+    assert_eq!(all[0].title, None);
+    assert_eq!(all[1].sha256, "b");
+    assert_eq!(all[2].sha256, "a");
+
+    let page1 = storage.list_documents(2, 0).unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1[0].sha256, "c");
+    let page2 = storage.list_documents(2, 2).unwrap();
+    assert_eq!(page2.len(), 1);
+    assert_eq!(page2[0].sha256, "a");
+}
+
+#[test]
+fn list_documents_on_empty_index_returns_empty_vec() {
+    let storage = fresh();
+    assert!(storage.list_documents(100, 0).unwrap().is_empty());
+}
+
+#[test]
 fn fts5_and_vec0_live_on_the_same_connection() {
     let storage = fresh();
     let conn = storage.conn();
