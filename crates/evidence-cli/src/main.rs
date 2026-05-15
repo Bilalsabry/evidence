@@ -13,12 +13,32 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use evidence_cli::commands::{ingest, query as query_cmd};
 use evidence_cli::ollama::OllamaBackend;
-use evidence_core::query::{LlmBackend, RerankerSupportChecker, SupportChecker};
+use evidence_core::query::{
+    LlmBackend, NliCrossEncoder, NliSupportChecker, RerankerSupportChecker, SupportChecker,
+};
 use evidence_core::retrieval::{BgeReranker, BgeSmall};
 use evidence_core::storage::Storage;
+
+/// Which backend to use for the citation lexical-support check when
+/// `--check-support` is set.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SupportMode {
+    /// Cross-encoder reranker as a relevance proxy (v0.2 default). Only
+    /// emits `Supports` or `Neutral` — can't tell contradiction apart.
+    Rerank,
+    /// Real NLI cross-encoder (v0.3). Emits all three verdicts.
+    Nli,
+}
+
+/// Holds whichever backend `--support-mode` selected, keeping it alive
+/// for the duration of the borrow into the support checker.
+enum SupportBackend {
+    Rerank(BgeReranker),
+    Nli(NliCrossEncoder),
+}
 
 #[derive(Parser)]
 #[command(
@@ -59,9 +79,15 @@ enum Command {
         #[arg(long, default_value_t = evidence_cli::ollama::DEFAULT_MODEL.to_string())]
         model: String,
         /// Enable the citation lexical-support check. First use downloads
-        /// `bge-reranker-base` (~280 MB).
+        /// the support-mode model (~265 MB for `nli`, ~280 MB for
+        /// `rerank`).
         #[arg(long)]
         check_support: bool,
+        /// Which checker to use under `--check-support`. The NLI checker
+        /// emits all three verdicts (supports / neutral / contradicts);
+        /// the reranker checker is the v0.2 proxy that only emits two.
+        #[arg(long, value_enum, default_value_t = SupportMode::Nli)]
+        support_mode: SupportMode,
     },
 }
 
@@ -100,21 +126,34 @@ fn real_main() -> Result<ExitCode> {
             ollama_url,
             model,
             check_support,
+            support_mode,
         } => {
             let storage = Storage::open(&cli.db).context("opening evidence index")?;
             let embedder = BgeSmall::new().context("initializing bge-small embedder")?;
             let llm: Box<dyn LlmBackend> = Box::new(OllamaBackend::new(ollama_url, model));
 
-            // The support checker borrows the reranker, so both have to
-            // live for the duration of the call.
-            let reranker = if check_support {
-                Some(BgeReranker::new().context("initializing bge-reranker-base")?)
+            // The support checker borrows the backend it wraps, so both
+            // have to live for the duration of the call.
+            let backend = if check_support {
+                Some(match support_mode {
+                    SupportMode::Rerank => SupportBackend::Rerank(
+                        BgeReranker::new().context("initializing bge-reranker-base")?,
+                    ),
+                    SupportMode::Nli => SupportBackend::Nli(
+                        NliCrossEncoder::new().context("initializing NLI cross-encoder")?,
+                    ),
+                })
             } else {
                 None
             };
-            let checker: Option<Box<dyn SupportChecker>> = reranker
-                .as_ref()
-                .map(|r| Box::new(RerankerSupportChecker::new(r)) as Box<dyn SupportChecker>);
+            let checker: Option<Box<dyn SupportChecker>> = backend.as_ref().map(|b| match b {
+                SupportBackend::Rerank(r) => {
+                    Box::new(RerankerSupportChecker::new(r)) as Box<dyn SupportChecker>
+                }
+                SupportBackend::Nli(n) => {
+                    Box::new(NliSupportChecker::new(n)) as Box<dyn SupportChecker>
+                }
+            });
 
             match query_cmd::run(
                 &storage,

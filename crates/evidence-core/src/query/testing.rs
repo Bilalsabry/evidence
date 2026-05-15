@@ -94,8 +94,8 @@ impl SupportChecker for ApprovingSupport {
     }
 }
 
-/// [`SupportChecker`] that rejects every sentence. Exercises the
-/// [`super::QueryError::Unsupported`] path.
+/// [`SupportChecker`] that returns `Neutral` for every sentence. Exercises
+/// the [`super::QueryError::Unsupported`] path.
 #[derive(Default)]
 pub struct RejectingSupport;
 
@@ -105,6 +105,21 @@ impl SupportChecker for RejectingSupport {
         _sentence: &str,
         _cited_texts: &[&str],
     ) -> Result<SupportVerdict, SupportError> {
-        Ok(SupportVerdict::Insufficient)
+        Ok(SupportVerdict::Neutral)
+    }
+}
+
+/// [`SupportChecker`] that returns `Contradicts` for every sentence.
+/// Exercises the [`super::QueryError::Contradicted`] path.
+#[derive(Default)]
+pub struct ContradictingSupport;
+
+impl SupportChecker for ContradictingSupport {
+    fn check(
+        &self,
+        _sentence: &str,
+        _cited_texts: &[&str],
+    ) -> Result<SupportVerdict, SupportError> {
+        Ok(SupportVerdict::Contradicts)
     }
 }

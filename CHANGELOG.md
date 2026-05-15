@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `query::NliCrossEncoder` — real NLI cross-encoder via direct `ort` +
+  `tokenizers` + `hf-hub` integration. Default model is
+  `Xenova/distilbert-base-uncased-mnli` (~265 MB, auto-downloaded on
+  first construction); label order is read from the model's
+  `config.json` so substituting a different repo is a one-arg change.
+  Inference runs behind a `Mutex<Session>` to keep the trait `Sync`.
+- `query::NliSupportChecker` — `SupportChecker` implementation that
+  classifies each cited span individually and aggregates with
+  "strict-wins": any `Contradicts` wins, else any `Neutral` wins,
+  else `Supports`.
+- `query::SupportVerdict` is now 3-state (`Supports` / `Neutral` /
+  `Contradicts`), matching textbook NLI labels. The v0.2
+  `RerankerSupportChecker` keeps its 2-state behavior and never
+  returns `Contradicts` (the relevance-as-proxy semantic doesn't have
+  a contradiction signal).
+- `QueryError::Contradicted` variant for the new refusal path.
+- `query::testing::ContradictingSupport` mock and a matching smoke
+  test.
+- CLI `--support-mode rerank|nli` flag on `evidence query`. Default
+  `nli` when `--check-support` is set (#21).
 - `apps/desktop` — Tauri 2 shell over `evidence-core`. Vite + React + TS
   frontend, three Tauri commands (`app_version`, `ingest`, `query`), a
   default capability scoped to the main window, and a smoke screen that
