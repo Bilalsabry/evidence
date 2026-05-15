@@ -161,6 +161,46 @@ cargo test -p evidence-eval
 Exit code `0` means every row agrees with the expected matrix; exit
 code `2` means a row diverged (regression in the validator).
 
+## Failure injection: matched-pair contrast sets
+
+Beyond hand-authored class-labeled examples, the harness ships an
+**injection pipeline** that derives labeled failure variants from
+verified-good seeds. Each `valid` example yields:
+
+- One **existence** variant — citation rewritten to a span ID not in the
+  corpus.
+- One **in-context** variant — a duplicate-text span added at a fresh
+  ID outside the prompt; citation rewritten to point at it.
+- One **support** variant per `support_mutations` entry (author-supplied
+  sentence rewrite, labeled `unsupported` or `contradicted`).
+
+The implementation lives at
+[`crates/evidence-eval/src/inject.rs`](../crates/evidence-eval/src/inject.rs).
+Construction details are intentionally explicit so the paper can cite
+each operator by name, following Gardner et al. 2020 (contrast sets).
+
+### Running the pipeline
+
+```sh
+# Generate matched-pair variants from a dataset of valid seeds:
+cargo run -p evidence-eval -- inject \
+    crates/evidence-eval/datasets/bootstrap.toml \
+    --output /tmp/bootstrap-injected.toml
+
+# Run the augmented dataset through every policy:
+cargo run -p evidence-eval -- run /tmp/bootstrap-injected.toml
+```
+
+On the current bootstrap (5 valid seeds with author-supplied support
+mutations) the pipeline emits 14 matched-pair variants, expanding the
+total dataset to 44 examples. Validator agreement remains 100% across
+all 176 (example, policy) rows.
+
+The injection pipeline replaces the Week 4 task in the paper plan with
+a now-standing artifact: the larger dataset is built by hand-authoring
+~300 valid seeds with support mutations, then running `evidence-eval
+inject` to materialize the failure-injection corpus.
+
 ## Open work, toward the paper
 
 This PR ships the harness, the bootstrap dataset, and the determinism

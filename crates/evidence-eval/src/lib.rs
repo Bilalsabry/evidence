@@ -16,9 +16,14 @@
 #![deny(unsafe_code)]
 
 pub mod dataset;
+pub mod inject;
 pub mod report;
 pub mod runner;
 
-pub use dataset::{load_dataset, Dataset, Example, HallucinationClass};
+pub use dataset::{load_dataset, Dataset, Example, HallucinationClass, SupportMutation};
+pub use inject::{
+    inject_all_variants, inject_existence, inject_in_context, inject_support, InjectionConfig,
+    InjectionError,
+};
 pub use report::{write_markdown, Report};
 pub use runner::{run, run_with_mode, Outcome, Policy, RunResult, SupportMode};

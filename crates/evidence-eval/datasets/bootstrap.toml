@@ -222,6 +222,15 @@ prompt_chunks = [
 response_sentences = [
     { text = "Pembrolizumab was administered intravenously at 200 mg every 21 days.", cited_spans = [200] },
 ]
+# Contrast-set mutations: each one rewrites the response sentence to
+# induce a labeled support failure. The injection harness in
+# `evidence-eval inject` materializes one variant per mutation.
+[[example.support_mutations]]
+text = "Pembrolizumab was administered at 400 mg every 21 days."
+class = "contradicted"
+[[example.support_mutations]]
+text = "Pembrolizumab is a programmed cell death receptor."
+class = "unsupported"
 
 [[example]]
 name = "valid_two_spans_one_sentence"
@@ -254,6 +263,12 @@ prompt_chunks = [
 response_sentences = [
     { text = "Grade 3+ adverse events were reported to the sponsor within 24 hours.", cited_spans = [221] },
 ]
+[[example.support_mutations]]
+text = "Grade 3+ adverse events were reported to the sponsor within 72 hours."
+class = "contradicted"
+[[example.support_mutations]]
+text = "Patients were enrolled at sites in 11 countries."
+class = "unsupported"
 
 # ──────────────────────────────── uncited (more) ──────────────────────────────
 
