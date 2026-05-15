@@ -60,7 +60,7 @@ The outline below is the skeleton. Each section names what goes in it, what's al
 
 ## 4. Benchmark (~1 page)
 
-**Subsection 4.1: Corpus.** ~50 FDA drug labels from DailyMed. Token / page / span statistics table. Sample size justification (workshop short paper, focused claim, narrow domain).
+**Subsection 4.1: Corpus.** ~50 FDA drug labels from DailyMed, fetched via the `evidence-eval fetch dailymed` subcommand. The fetcher walks the public v2 API, downloads PDFs idempotently, and writes a `manifest.toml` with set IDs, SHA-256 hashes, and timestamps — the artifact the paper cites for reproducibility. Token / page / span statistics table. Sample size justification (workshop short paper, focused claim, narrow domain).
 
 **Subsection 4.2: Question types.** Five categories, ~60 examples each. Single-span, multi-span, negation, quantitative, contraindication / interaction. Worked example per category.
 

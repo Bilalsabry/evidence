@@ -25,9 +25,10 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
-    inject_all_variants, load_dataset, run_with_mode, write_markdown, InjectionConfig, Report,
-    SupportMode,
+    fetch_dailymed, inject_all_variants, load_dataset, run_with_mode, write_markdown, FetchConfig,
+    InjectionConfig, Report, SupportMode, UreqClient,
 };
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(name = "evidence-eval", about = "Closed-Loop Citation eval harness")]
@@ -62,6 +63,29 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Fetch a public corpus into a local directory. Currently supports
+    /// only DailyMed (FDA drug labels). Emits `manifest.toml` plus the
+    /// PDFs under `labels/`.
+    Fetch {
+        #[command(subcommand)]
+        source: FetchSource,
+    },
+}
+
+#[derive(Subcommand)]
+enum FetchSource {
+    /// DailyMed — FDA Structured Product Labeling. Public domain.
+    Dailymed {
+        /// Output directory for `manifest.toml` and `labels/*.pdf`.
+        #[arg(long, default_value = "dailymed-corpus")]
+        output: PathBuf,
+        /// Maximum number of labels to fetch.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Pause between HTTP requests, in milliseconds.
+        #[arg(long, default_value_t = 500)]
+        delay_ms: u64,
+    },
 }
 
 fn main() -> ExitCode {
@@ -83,7 +107,34 @@ fn real_main() -> Result<ExitCode> {
             real_nli,
         } => run_command(&dataset, output.as_deref(), real_nli),
         Command::Inject { input, output } => inject_command(&input, &output),
+        Command::Fetch { source } => match source {
+            FetchSource::Dailymed {
+                output,
+                limit,
+                delay_ms,
+            } => fetch_dailymed_command(&output, limit, delay_ms),
+        },
     }
+}
+
+fn fetch_dailymed_command(
+    output: &std::path::Path,
+    limit: usize,
+    delay_ms: u64,
+) -> Result<ExitCode> {
+    let http = UreqClient::new();
+    let config = FetchConfig {
+        limit,
+        delay: Duration::from_millis(delay_ms),
+        output_dir: output.to_path_buf(),
+    };
+    let manifest = fetch_dailymed(&http, &config).context("fetching DailyMed corpus")?;
+    eprintln!(
+        "fetched {} labels into {}",
+        manifest.count,
+        output.display(),
+    );
+    Ok(ExitCode::SUCCESS)
 }
 
 fn run_command(

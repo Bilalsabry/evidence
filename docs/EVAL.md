@@ -182,6 +182,9 @@ each operator by name, following Gardner et al. 2020 (contrast sets).
 ### Running the pipeline
 
 ```sh
+# Fetch a real corpus (FDA drug labels) for the paper-grade benchmark:
+cargo run -p evidence-eval -- fetch dailymed --limit 50 --output ./dailymed-corpus
+
 # Generate matched-pair variants from a dataset of valid seeds:
 cargo run -p evidence-eval -- inject \
     crates/evidence-eval/datasets/bootstrap.toml \
@@ -190,6 +193,11 @@ cargo run -p evidence-eval -- inject \
 # Run the augmented dataset through every policy:
 cargo run -p evidence-eval -- run /tmp/bootstrap-injected.toml
 ```
+
+The `fetch dailymed` step walks the public DailyMed v2 API, downloads
+PDFs idempotently, and writes a `manifest.toml` with stable set IDs,
+SHA-256 hashes, and fetch timestamps. Reruns skip files already on
+disk that match the manifest.
 
 On the current bootstrap (5 valid seeds with author-supplied support
 mutations) the pipeline emits 14 matched-pair variants, expanding the
