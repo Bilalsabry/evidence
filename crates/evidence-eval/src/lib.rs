@@ -16,11 +16,13 @@
 #![deny(unsafe_code)]
 
 pub mod dataset;
+pub mod fetch;
 pub mod inject;
 pub mod report;
 pub mod runner;
 
 pub use dataset::{load_dataset, Dataset, Example, HallucinationClass, SupportMutation};
+pub use fetch::{fetch_dailymed, FetchConfig, FetchError, HttpClient, Manifest, UreqClient};
 pub use inject::{
     inject_all_variants, inject_existence, inject_in_context, inject_support, InjectionConfig,
     InjectionError,
