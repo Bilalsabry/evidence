@@ -10,6 +10,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -23,7 +24,7 @@ use crate::storage::{Storage, StorageError};
 pub const MAX_CHUNK_BYTES: usize = 1024;
 
 /// Summary of an ingest run, returned to the caller for logging or display.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IngestSummary {
     pub document_id: i64,
     pub sha256: String,

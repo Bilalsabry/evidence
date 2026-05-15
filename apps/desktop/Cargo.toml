@@ -1,0 +1,29 @@
+[package]
+name = "evidence-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "evidence desktop app — Tauri 2 shell over evidence-core."
+
+[lib]
+name = "evidence_desktop_lib"
+path = "src/lib.rs"
+# `staticlib` and `cdylib` are required by tauri-build for mobile targets;
+# `rlib` lets the integration tests link as a regular library.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "evidence-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+evidence-core = { path = "../../crates/evidence-core" }
+evidence-cli = { path = "../../crates/evidence-cli" }
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

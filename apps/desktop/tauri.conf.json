@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "evidence",
+  "version": "0.3.0-dev",
+  "identifier": "dev.evidence.desktop",
+  "build": {
+    "frontendDist": "web/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm --prefix web run dev",
+    "beforeBuildCommand": "npm --prefix web run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "evidence",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"]
+  }
+}
