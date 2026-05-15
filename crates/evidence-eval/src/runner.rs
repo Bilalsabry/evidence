@@ -9,13 +9,26 @@
 use std::collections::HashMap;
 
 use evidence_core::query::{
-    validate_answer, ChunkContext, Prompt, QueryError, RawAnswer, RawSentence, SupportChecker,
-    SupportError, SupportVerdict, ValidationPolicy,
+    validate_answer, ChunkContext, NliCrossEncoder, NliSupportChecker, Prompt, QueryError,
+    RawAnswer, RawSentence, SupportChecker, SupportError, SupportVerdict, ValidationPolicy,
 };
 use evidence_core::storage::Storage;
 use rusqlite::params;
 
 use crate::dataset::{Dataset, Example, HallucinationClass};
+
+/// How the harness materializes the support gate's checker.
+///
+/// `Mock` substitutes a class-derived mock so the runner is
+/// deterministic — the harness tests assert validator wiring under this
+/// mode. `RealNli` loads `NliCrossEncoder::shared()` and lets the actual
+/// model decide; under this mode, "agreement" with the expected matrix
+/// becomes a measurement of the NLI model's accuracy on our labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportMode {
+    Mock,
+    RealNli,
+}
 
 /// Validator configurations the harness evaluates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -93,22 +106,55 @@ pub struct RunResult {
     pub agreement: bool,
 }
 
-/// Run every example against every policy. Returns one row per
-/// (example, policy) pair.
+/// Run every example against every policy with class-derived mocks for
+/// the support gate. The agreement rate is always 100% by construction;
+/// what the harness measures here is *validator wiring*, not model
+/// behavior.
 ///
 /// # Errors
 ///
-/// Returns an error if dataset seeding fails (in-memory SQLite shouldn't
-/// fail, but we surface anyway).
+/// Returns an error if dataset seeding fails.
 pub fn run(dataset: &Dataset) -> anyhow::Result<Vec<RunResult>> {
+    run_with_mode(dataset, SupportMode::Mock)
+}
+
+/// Run every example against every policy, choosing how the support gate
+/// gets its verdicts via [`SupportMode`].
+///
+/// Under [`SupportMode::RealNli`], the support gate uses
+/// [`NliCrossEncoder::shared()`] — the same process-wide instance the CLI
+/// uses. The agreement rate then reports the NLI model's accuracy on the
+/// labeled examples: a row disagrees with the expected matrix exactly
+/// when the model's verdict differs from the label.
+///
+/// # Errors
+///
+/// Returns an error if dataset seeding fails or — under
+/// [`SupportMode::RealNli`] — the NLI model fails to initialize.
+pub fn run_with_mode(dataset: &Dataset, mode: SupportMode) -> anyhow::Result<Vec<RunResult>> {
+    // For RealNli mode, load the model once before iterating so first-
+    // example latency doesn't include the download.
+    let nli_encoder: Option<&'static NliCrossEncoder> = match mode {
+        SupportMode::Mock => None,
+        SupportMode::RealNli => {
+            Some(NliCrossEncoder::shared().map_err(|e| anyhow::anyhow!("NLI init: {e}"))?)
+        }
+    };
+
     let mut rows = Vec::with_capacity(dataset.examples.len() * Policy::all().len());
     for example in &dataset.examples {
         let storage = seed_storage(example)?;
         let prompt = build_prompt(example);
         let raw = build_raw_answer(example);
         for policy in Policy::all() {
-            let checker = mock_support_for(example.class);
-            let policy_obj = build_policy(policy, checker.as_deref());
+            // The checker is only consulted when the policy is ThreeGate
+            // *and* it's `Some`. For non-ThreeGate policies we still pass
+            // it so the harness's shape stays uniform.
+            let (mock_owner, nli_checker_owner) = build_checker(mode, nli_encoder, example.class);
+            let checker_ref: Option<&dyn SupportChecker> = mock_owner
+                .as_deref()
+                .or_else(|| nli_checker_owner.as_ref().map(|c| c as &dyn SupportChecker));
+            let policy_obj = build_policy(policy, checker_ref);
             let outcome = match validate_answer(&storage, &raw, &prompt, &policy_obj) {
                 Ok(_) => Outcome::Accepted,
                 Err(err) => Outcome::Refused(classify_refusal(&err)),
@@ -126,6 +172,26 @@ pub fn run(dataset: &Dataset) -> anyhow::Result<Vec<RunResult>> {
         }
     }
     Ok(rows)
+}
+
+/// Build the support checker for one (mode, example) pair. Returns the
+/// owners so the runner can take references without the checker being
+/// dropped on the spot.
+fn build_checker(
+    mode: SupportMode,
+    nli_encoder: Option<&'static NliCrossEncoder>,
+    class: HallucinationClass,
+) -> (
+    Option<Box<dyn SupportChecker>>,
+    Option<NliSupportChecker<'static>>,
+) {
+    match mode {
+        SupportMode::Mock => (mock_support_for(class), None),
+        SupportMode::RealNli => {
+            let encoder = nli_encoder.expect("RealNli mode loaded the encoder up front");
+            (None, Some(NliSupportChecker::new(encoder)))
+        }
+    }
 }
 
 fn build_policy<'a>(

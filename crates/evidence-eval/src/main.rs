@@ -13,7 +13,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use evidence_eval::{load_dataset, run, write_markdown, Report};
+use evidence_eval::{load_dataset, run_with_mode, write_markdown, Report, SupportMode};
 
 #[derive(Parser)]
 #[command(name = "evidence-eval", about = "Closed-Loop Citation eval harness")]
@@ -23,6 +23,12 @@ struct Cli {
     /// Optional output path for the markdown report. Default: stdout.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Use the real NLI cross-encoder for the support gate. First run
+    /// downloads `Xenova/distilbert-base-uncased-mnli` (~265 MB).
+    /// Default is the class-derived mocks, which are deterministic and
+    /// fast but only measure validator wiring.
+    #[arg(long)]
+    real_nli: bool,
 }
 
 fn main() -> ExitCode {
@@ -38,7 +44,12 @@ fn main() -> ExitCode {
 fn real_main() -> Result<ExitCode> {
     let cli = Cli::parse();
     let dataset = load_dataset(&cli.dataset).context("loading dataset")?;
-    let rows = run(&dataset).context("running eval")?;
+    let mode = if cli.real_nli {
+        SupportMode::RealNli
+    } else {
+        SupportMode::Mock
+    };
+    let rows = run_with_mode(&dataset, mode).context("running eval")?;
     let report = Report::new(rows);
     let md = write_markdown(&report);
 

@@ -100,10 +100,50 @@ left-to-right per row — each gate adds catch rate for its own class.
 **Caveat.** The bootstrap harness uses class-derived mock support
 checkers (`SupportingChecker`, `NeutralChecker`, `ContradictingChecker`)
 so the test stays deterministic. It measures the validator wiring, not
-the support model's accuracy. A separate study (planned for the paper)
-swaps the mock for `NliCrossEncoder` and reports how often the real
-NLI model produces the labeled verdict — that's the support model's
-real-world catch rate.
+the support model's accuracy. The real model's accuracy is measured
+separately under `--real-nli` (see below).
+
+## Real-NLI run
+
+Pass `--real-nli` to swap the class-derived mock for
+`NliCrossEncoder::shared()` (the same instance the CLI uses,
+`Xenova/distilbert-base-uncased-mnli`). The agreement rate then
+measures **the NLI model's accuracy on our labeled examples**.
+
+On the 30-example bootstrap:
+
+| class | mock-mode agreement | real-NLI agreement | divergences |
+|---|---|---|---|
+| `valid` | 5 / 5 | 3 / 5 | NLI refused 2 valid sentences |
+| `uncited` | 5 / 5 | 5 / 5 | — (gate runs before NLI) |
+| `fabricated_span` | 5 / 5 | 5 / 5 | — (gate runs before NLI) |
+| `out_of_context` | 5 / 5 | 5 / 5 | — (gate runs before NLI) |
+| `unsupported` | 5 / 5 | 5 / 5 | NLI correctly Neutral on every off-topic citation |
+| `contradicted` | 5 / 5 | 5 / 5 | NLI correctly Contradicts every numeric / negation / temporal flip |
+
+**Real-NLI overall agreement: 118 / 120 (98.3%).**
+
+The two divergences:
+
+- `valid_two_spans_one_sentence` — sentence "The intent-to-treat
+  population included all randomized patients, with median follow-up
+  of 18.4 months." cites two spans, each supporting half the claim.
+  The NLI cross-encoder scores each `(span, sentence)` pair
+  independently; neither span entails the full composite sentence, so
+  the strict-wins aggregation returns `Neutral`.
+- `valid_chunk_with_span_range` — sentence wording is a near-paraphrase
+  of the cited span ("Grade 3+ adverse events" vs. "Grade 3+ events").
+  The NLI model is conservative on the rewording.
+
+Both failure modes are real cases the paper will note as **open work**:
+
+- **Clause-level decomposition.** Split a multi-claim sentence into
+  atomic sub-claims, NLI each, and aggregate. Most-cited paper:
+  Min et al. (2023) *FActScore*.
+- **Paraphrase tolerance.** A stronger / larger NLI checkpoint, or
+  fine-tuning the cross-encoder on domain-specific paraphrase pairs,
+  closes most of the gap. Cheap, deferred until we have eval data
+  from real customer corpora to calibrate against.
 
 ## Running the harness
 
