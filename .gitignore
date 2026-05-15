@@ -7,3 +7,9 @@
 *.swp
 .idea/
 .vscode/
+
+# Model caches downloaded by fastembed at runtime. We let the cache live
+# wherever the workload is run from; project-root downloads must not be
+# committed (bge-small alone is 126 MB, past GitHub's 100 MB hard limit).
+.fastembed_cache/
+**/.fastembed_cache/
