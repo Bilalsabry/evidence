@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `answer_query` signature gained a trailing `support` parameter.
   Update callers to pass `None` to preserve v0.1.0 behavior.
 
+### Tests
+- `evidence-cli` gains an `ollama-integration-tests` cargo feature. When
+  enabled, `tests/ollama_integration.rs` runs five scenarios against a
+  local `tiny_http` stub server (happy path, malformed inner JSON,
+  HTTP 5xx, empty `sentences` array, malformed outer envelope). CI runs
+  this as a dedicated `test-ollama` job; the default `cargo test
+  --workspace` still skips it (#14).
+
 ## [0.1.0] — 2026-05-15
 
 ### Added
