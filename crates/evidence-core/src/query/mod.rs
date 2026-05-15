@@ -133,14 +133,100 @@ pub enum QueryError {
     Contradicted { sentence: String },
 }
 
+/// Toggle for each validator gate. Lets callers ablate the validator for
+/// evaluation work (see the `evidence-eval` crate) — for example,
+/// disabling [`Self::enforce_in_context`] measures how much the
+/// closed-loop constraint contributes to the catch rate compared to a
+/// generic existence-only validator.
+///
+/// Production callers should use [`Self::closed_loop_two_gate`] (v0.1
+/// reference) or [`Self::closed_loop_three_gate`] (v0.3 reference, full
+/// Closed-Loop Citation).
+#[derive(Clone, Copy)]
+pub struct ValidationPolicy<'a> {
+    /// Reject sentences that carry no span citations. Disabling collapses
+    /// the system to vanilla RAG: any text the model produces is
+    /// accepted.
+    pub require_citations: bool,
+    /// Reject citations whose span ID isn't in the database. Disabling
+    /// accepts fabricated span IDs.
+    pub enforce_existence: bool,
+    /// Reject citations whose span ID wasn't in the chunks shown to the
+    /// model for this query. This is the closed-loop constraint —
+    /// disabling lets the model cite anything in the corpus, even spans
+    /// it didn't read.
+    pub enforce_in_context: bool,
+    /// If `Some`, every accepted sentence is run through an NLI-style
+    /// support check.
+    pub support: Option<&'a dyn SupportChecker>,
+}
+
+impl Default for ValidationPolicy<'_> {
+    fn default() -> Self {
+        Self::closed_loop_two_gate()
+    }
+}
+
+impl<'a> ValidationPolicy<'a> {
+    /// All gates off. Baseline: vanilla RAG where any model output is
+    /// accepted regardless of citation shape or validity.
+    #[must_use]
+    pub fn vanilla_rag() -> Self {
+        Self {
+            require_citations: false,
+            enforce_existence: false,
+            enforce_in_context: false,
+            support: None,
+        }
+    }
+
+    /// Require citations + existence only. Catches fabricated span IDs
+    /// but accepts cross-corpus citations the model never actually read.
+    #[must_use]
+    pub fn existence_only() -> Self {
+        Self {
+            require_citations: true,
+            enforce_existence: true,
+            enforce_in_context: false,
+            support: None,
+        }
+    }
+
+    /// Closed-Loop Citation, two gates: existence + in-context. The v0.1
+    /// reference: the model can only cite spans it was actually shown.
+    #[must_use]
+    pub fn closed_loop_two_gate() -> Self {
+        Self {
+            require_citations: true,
+            enforce_existence: true,
+            enforce_in_context: true,
+            support: None,
+        }
+    }
+
+    /// Closed-Loop Citation, three gates: existence + in-context +
+    /// entailment. The v0.3 reference. `support` is the NLI checker (or
+    /// the v0.2 reranker proxy).
+    #[must_use]
+    pub fn closed_loop_three_gate(support: &'a dyn SupportChecker) -> Self {
+        Self {
+            require_citations: true,
+            enforce_existence: true,
+            enforce_in_context: true,
+            support: Some(support),
+        }
+    }
+}
+
 /// Full query pipeline: retrieve → prompt LLM → validate citations →
 /// resolve citation metadata.
 ///
 /// # Errors
 ///
 /// Returns [`QueryError::Uncited`] / [`QueryError::OutOfContext`] /
-/// [`QueryError::UnknownSpan`] when the model's output fails validation;
-/// these are the "refusal" path advertised in the design doc.
+/// [`QueryError::UnknownSpan`] / [`QueryError::Unsupported`] /
+/// [`QueryError::Contradicted`] when the model's output fails the
+/// configured validator gates.
 pub fn answer_query(
     storage: &Storage,
     embedder: &dyn Embedder,
@@ -149,10 +235,30 @@ pub fn answer_query(
     k: usize,
     support: Option<&dyn SupportChecker>,
 ) -> Result<Answer, QueryError> {
+    let policy = match support {
+        Some(s) => ValidationPolicy::closed_loop_three_gate(s),
+        None => ValidationPolicy::closed_loop_two_gate(),
+    };
+    answer_query_with_policy(storage, embedder, llm, question, k, &policy)
+}
+
+/// Same as [`answer_query`], but explicit about the validator's gate
+/// configuration. Used by the eval harness to ablate one gate at a time.
+///
+/// # Errors
+///
+/// See [`answer_query`].
+pub fn answer_query_with_policy(
+    storage: &Storage,
+    embedder: &dyn Embedder,
+    llm: &dyn LlmBackend,
+    question: &str,
+    k: usize,
+    policy: &ValidationPolicy<'_>,
+) -> Result<Answer, QueryError> {
     let hits = hybrid_search(storage.conn(), embedder, question, k)?;
 
     let mut prompt_chunks = Vec::with_capacity(hits.len());
-    let mut allowed_spans: HashMap<i64, ()> = HashMap::new();
     for hit in &hits {
         let text: String = storage.conn().query_row(
             "SELECT text FROM chunks WHERE id = ?",
@@ -165,9 +271,6 @@ pub fn answer_query(
             span_id_start: hit.span_id_start,
             span_id_end: hit.span_id_end,
         });
-        for sid in hit.span_id_start..=hit.span_id_end {
-            allowed_spans.insert(sid, ());
-        }
     }
 
     let prompt = Prompt {
@@ -176,34 +279,81 @@ pub fn answer_query(
     };
 
     let raw = llm.answer(&prompt)?;
-    validate_and_resolve(storage, &raw, &allowed_spans, support)
+    validate_answer(storage, &raw, &prompt, policy)
+}
+
+/// Run the validator against a pre-built `(Prompt, RawAnswer)` pair —
+/// no retrieval, no LLM call. This is the surface the eval harness uses
+/// to feed fixture model outputs through each [`ValidationPolicy`] and
+/// measure which gates catch which hallucination class.
+///
+/// # Errors
+///
+/// See [`answer_query`].
+pub fn validate_answer(
+    storage: &Storage,
+    raw: &RawAnswer,
+    prompt: &Prompt,
+    policy: &ValidationPolicy<'_>,
+) -> Result<Answer, QueryError> {
+    let allowed_spans: HashMap<i64, ()> = prompt
+        .chunks
+        .iter()
+        .flat_map(|c| (c.span_id_start..=c.span_id_end).map(|s| (s, ())))
+        .collect();
+    validate_and_resolve(storage, raw, &allowed_spans, policy)
 }
 
 fn validate_and_resolve(
     storage: &Storage,
     raw: &RawAnswer,
     allowed_spans: &HashMap<i64, ()>,
-    support: Option<&dyn SupportChecker>,
+    policy: &ValidationPolicy<'_>,
 ) -> Result<Answer, QueryError> {
     let mut out = Vec::with_capacity(raw.sentences.len());
     for sentence in &raw.sentences {
-        if sentence.span_ids.is_empty() {
+        // Shape gate: require at least one citation per sentence.
+        if policy.require_citations && sentence.span_ids.is_empty() {
             return Err(QueryError::Uncited {
                 sentence: sentence.text.clone(),
             });
         }
+
         let mut citations = Vec::with_capacity(sentence.span_ids.len());
         let mut cited_texts: Vec<String> = Vec::with_capacity(sentence.span_ids.len());
         for span_id in &sentence.span_ids {
-            if !allowed_spans.contains_key(span_id) {
+            // Gate 1 (existence): the span ID must resolve in the DB.
+            // We run existence before in-context so each gate cleanly
+            // catches its own hallucination class — a fabricated ID
+            // surfaces as `UnknownSpan` even if it also happens to be
+            // outside the prompt's allowed set.
+            let lookup = resolve_citation_with_text(storage, *span_id);
+            let (citation, text) = match lookup {
+                Ok(pair) => pair,
+                Err(QueryError::UnknownSpan { .. }) if !policy.enforce_existence => (
+                    Citation {
+                        span_id: *span_id,
+                        doc_id: 0,
+                        page_num: 0,
+                        start_offset: 0,
+                        end_offset: 0,
+                    },
+                    String::new(),
+                ),
+                Err(e) => return Err(e),
+            };
+
+            // Gate 2 (in-context): the span must have been in the prompt.
+            if policy.enforce_in_context && !allowed_spans.contains_key(span_id) {
                 return Err(QueryError::OutOfContext { span_id: *span_id });
             }
-            let (citation, text) = resolve_citation_with_text(storage, *span_id)?;
+
             citations.push(citation);
             cited_texts.push(text);
         }
 
-        if let Some(checker) = support {
+        // Gate 3 (entailment/support).
+        if let Some(checker) = policy.support {
             let refs: Vec<&str> = cited_texts.iter().map(String::as_str).collect();
             match checker.check(&sentence.text, &refs)? {
                 SupportVerdict::Supports => {}

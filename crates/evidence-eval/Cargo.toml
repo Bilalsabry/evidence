@@ -1,0 +1,25 @@
+[package]
+name = "evidence-eval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Closed-Loop Citation evaluation harness — runs labeled scenarios through each ValidationPolicy and reports the catch matrix."
+
+[lib]
+name = "evidence_eval"
+path = "src/lib.rs"
+
+[[bin]]
+name = "evidence-eval"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+evidence-core = { path = "../evidence-core" }
+rusqlite = "0.39"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"

@@ -1,0 +1,200 @@
+# Bootstrap eval set for the Closed-Loop Citation harness.
+#
+# Twelve examples, two per hallucination class. Each one is small enough
+# to read and verify by hand. The runner asserts the validator's
+# behavior matches the class label under every ValidationPolicy.
+#
+# Class taxonomy (see `evidence_eval::HallucinationClass`):
+# - valid           : every gate accepts
+# - uncited         : any policy that requires citations refuses
+# - fabricated_span : existence gate refuses
+# - out_of_context  : in-context gate refuses
+# - unsupported     : support gate refuses (Neutral)
+# - contradicted    : support gate refuses (Contradicts)
+
+# ──────────────────────────────────────── valid ───────────────────────────────
+
+[[example]]
+name = "valid_single_sentence"
+class = "valid"
+description = "Model produces one sentence with a valid in-context citation supported by its span."
+corpus_spans = [
+    { id = 10, page = 1, text = "The contraindication list excludes pregnant women and patients under 18." },
+]
+prompt_chunks = [
+    { id = 1, span_range = [10, 10], text = "The contraindication list excludes pregnant women and patients under 18." },
+]
+response_sentences = [
+    { text = "The contraindication list excludes pregnant women and patients under 18.", cited_spans = [10] },
+]
+
+[[example]]
+name = "valid_two_sentence_with_two_spans"
+class = "valid"
+description = "Two sentences each citing a distinct span from the prompt."
+corpus_spans = [
+    { id = 20, page = 1, text = "The trial enrolled 240 patients with stage III NSCLC." },
+    { id = 21, page = 1, text = "The primary endpoint was overall survival at 24 months." },
+]
+prompt_chunks = [
+    { id = 10, span_range = [20, 20], text = "The trial enrolled 240 patients with stage III NSCLC." },
+    { id = 11, span_range = [21, 21], text = "The primary endpoint was overall survival at 24 months." },
+]
+response_sentences = [
+    { text = "The trial enrolled 240 patients with stage III NSCLC.", cited_spans = [20] },
+    { text = "The primary endpoint was overall survival at 24 months.", cited_spans = [21] },
+]
+
+# ────────────────────────────────── uncited ───────────────────────────────────
+
+[[example]]
+name = "uncited_confident_sentence"
+class = "uncited"
+description = "Model produces a sentence with no citations at all."
+corpus_spans = [
+    { id = 30, page = 1, text = "The trial enrolled 240 patients." },
+]
+prompt_chunks = [
+    { id = 20, span_range = [30, 30], text = "The trial enrolled 240 patients." },
+]
+response_sentences = [
+    { text = "I am quite confident the trial was conducted correctly.", cited_spans = [] },
+]
+
+[[example]]
+name = "uncited_among_cited"
+class = "uncited"
+description = "First sentence has no citation; harness refuses on the first uncited claim regardless of later cites."
+corpus_spans = [
+    { id = 40, page = 1, text = "Site investigators submitted weekly safety reports." },
+]
+prompt_chunks = [
+    { id = 30, span_range = [40, 40], text = "Site investigators submitted weekly safety reports." },
+]
+response_sentences = [
+    { text = "Trust me on this.", cited_spans = [] },
+    { text = "Site investigators submitted weekly safety reports.", cited_spans = [40] },
+]
+
+# ──────────────────────────────── fabricated_span ─────────────────────────────
+
+[[example]]
+name = "fabricated_span_random_id"
+class = "fabricated_span"
+description = "Model cites span 999 which doesn't exist in the corpus."
+corpus_spans = [
+    { id = 50, page = 1, text = "The trial enrolled 240 patients." },
+]
+prompt_chunks = [
+    { id = 40, span_range = [50, 50], text = "The trial enrolled 240 patients." },
+]
+response_sentences = [
+    { text = "Pembrolizumab was added to the regimen on day 14.", cited_spans = [999] },
+]
+
+[[example]]
+name = "fabricated_span_off_by_one"
+class = "fabricated_span"
+description = "Model cites span 61, off by one from the real span 60."
+corpus_spans = [
+    { id = 60, page = 1, text = "Adverse events were graded per CTCAE v5.0." },
+]
+prompt_chunks = [
+    { id = 50, span_range = [60, 60], text = "Adverse events were graded per CTCAE v5.0." },
+]
+response_sentences = [
+    { text = "Adverse events were graded per CTCAE v5.0.", cited_spans = [61] },
+]
+
+# ─────────────────────────────── out_of_context ───────────────────────────────
+
+[[example]]
+name = "out_of_context_real_other_chunk"
+class = "out_of_context"
+description = "Cited span exists in the corpus but wasn't in the prompt — exactly the closed-loop case."
+corpus_spans = [
+    { id = 70, page = 1, text = "The trial enrolled 240 patients with stage III NSCLC." },
+    { id = 71, page = 2, text = "Pembrolizumab was administered every 21 days." },
+]
+prompt_chunks = [
+    # Only span 70 was shown — but the model cites span 71 too.
+    { id = 60, span_range = [70, 70], text = "The trial enrolled 240 patients with stage III NSCLC." },
+]
+response_sentences = [
+    { text = "Pembrolizumab was administered every 21 days.", cited_spans = [71] },
+]
+
+[[example]]
+name = "out_of_context_adjacent_page"
+class = "out_of_context"
+description = "Cited span is on a page next to the prompt chunk; the model probably 'remembered' something from training instead of the prompt."
+corpus_spans = [
+    { id = 80, page = 7, text = "The contraindication list excludes pregnant women." },
+    { id = 81, page = 8, text = "The exclusion criteria also bar prior CYP3A4 inhibitor use." },
+]
+prompt_chunks = [
+    { id = 70, span_range = [80, 80], text = "The contraindication list excludes pregnant women." },
+]
+response_sentences = [
+    { text = "Prior CYP3A4 inhibitor use is also excluded.", cited_spans = [81] },
+]
+
+# ───────────────────────────────── unsupported ────────────────────────────────
+
+[[example]]
+name = "unsupported_off_topic_citation"
+class = "unsupported"
+description = "Cited span exists and was in context, but doesn't entail the sentence (off-topic). Real NLI returns Neutral."
+corpus_spans = [
+    { id = 90, page = 1, text = "Site investigators submitted weekly safety reports to the sponsor." },
+]
+prompt_chunks = [
+    { id = 80, span_range = [90, 90], text = "Site investigators submitted weekly safety reports to the sponsor." },
+]
+response_sentences = [
+    { text = "Pembrolizumab was administered every 21 days.", cited_spans = [90] },
+]
+
+[[example]]
+name = "unsupported_generic_grounding"
+class = "unsupported"
+description = "Model picks the closest-relevance citation but the cited span doesn't support the specific claim."
+corpus_spans = [
+    { id = 100, page = 3, text = "The IRB review board met monthly to assess study amendments." },
+]
+prompt_chunks = [
+    { id = 90, span_range = [100, 100], text = "The IRB review board met monthly to assess study amendments." },
+]
+response_sentences = [
+    { text = "The IRB approved the inclusion of patients under 18.", cited_spans = [100] },
+]
+
+# ───────────────────────────────── contradicted ───────────────────────────────
+
+[[example]]
+name = "contradicted_enrollment_number"
+class = "contradicted"
+description = "The canonical hallucination: cited span says 240, model says 1000."
+corpus_spans = [
+    { id = 110, page = 1, text = "The trial enrolled 240 patients with stage III NSCLC." },
+]
+prompt_chunks = [
+    { id = 100, span_range = [110, 110], text = "The trial enrolled 240 patients with stage III NSCLC." },
+]
+response_sentences = [
+    { text = "The trial enrolled 1000 patients.", cited_spans = [110] },
+]
+
+[[example]]
+name = "contradicted_inclusion_inversion"
+class = "contradicted"
+description = "Cited span says the criterion *excludes* a population; model says it *includes* them."
+corpus_spans = [
+    { id = 120, page = 1, text = "The contraindication list excludes pregnant women and patients under 18." },
+]
+prompt_chunks = [
+    { id = 110, span_range = [120, 120], text = "The contraindication list excludes pregnant women and patients under 18." },
+]
+response_sentences = [
+    { text = "Pregnant women and patients under 18 are eligible for the trial.", cited_spans = [120] },
+]

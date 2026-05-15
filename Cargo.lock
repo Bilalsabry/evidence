@@ -1333,6 +1333,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "evidence-eval"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "evidence-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "toml 0.8.2",
+]
+
+[[package]]
 name = "exr"
 version = "1.74.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

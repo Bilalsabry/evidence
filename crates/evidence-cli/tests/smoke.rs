@@ -160,17 +160,22 @@ fn uncited_sentence_is_rejected_by_validator() {
 }
 
 #[test]
-fn out_of_context_citation_is_rejected_by_validator() {
+fn bogus_span_citation_is_rejected_by_validator() {
     let (storage, embedder) = ingested();
-    // 999_999 won't appear in any chunk's span range.
+    // 999_999 isn't in the DB and wasn't in any chunk — either gate may
+    // catch it. We assert that *some* gate did, not which one (the
+    // ordering is the eval harness's concern).
     let llm: Box<dyn LlmBackend> = Box::new(OutOfContextBackend {
         bogus_span_id: 999_999,
     });
     let err = query::run(&storage, &embedder, llm.as_ref(), None, "anything", 4)
         .expect_err("bogus span_id must be rejected");
     assert!(
-        matches!(err, QueryError::OutOfContext { .. }),
-        "expected OutOfContext, got {err:?}",
+        matches!(
+            err,
+            QueryError::OutOfContext { .. } | QueryError::UnknownSpan { .. }
+        ),
+        "expected OutOfContext or UnknownSpan, got {err:?}",
     );
 }
 
