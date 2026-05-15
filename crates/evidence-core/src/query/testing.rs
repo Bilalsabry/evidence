@@ -1,7 +1,10 @@
 //! Deterministic in-process [`LlmBackend`] implementations for tests and
 //! smoke checks. None of these talk to the network.
 
-use super::{LlmBackend, LlmError, Prompt, RawAnswer, RawSentence};
+use super::{
+    LlmBackend, LlmError, Prompt, RawAnswer, RawSentence, SupportChecker, SupportError,
+    SupportVerdict,
+};
 
 /// Backend that echoes the top retrieved chunk as a single citing sentence.
 /// Useful for end-to-end smoke tests where the goal is to verify the
@@ -72,5 +75,36 @@ impl LlmBackend for OutOfContextBackend {
                 span_ids: vec![self.bogus_span_id],
             }],
         })
+    }
+}
+
+/// [`SupportChecker`] that approves every sentence. Use with the standard
+/// pipeline to confirm the validator threads support results through
+/// correctly.
+#[derive(Default)]
+pub struct ApprovingSupport;
+
+impl SupportChecker for ApprovingSupport {
+    fn check(
+        &self,
+        _sentence: &str,
+        _cited_texts: &[&str],
+    ) -> Result<SupportVerdict, SupportError> {
+        Ok(SupportVerdict::Supports)
+    }
+}
+
+/// [`SupportChecker`] that rejects every sentence. Exercises the
+/// [`super::QueryError::Unsupported`] path.
+#[derive(Default)]
+pub struct RejectingSupport;
+
+impl SupportChecker for RejectingSupport {
+    fn check(
+        &self,
+        _sentence: &str,
+        _cited_texts: &[&str],
+    ) -> Result<SupportVerdict, SupportError> {
+        Ok(SupportVerdict::Insufficient)
     }
 }

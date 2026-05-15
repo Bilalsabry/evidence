@@ -7,9 +7,10 @@ use std::io::Write;
 
 use evidence_cli::commands::{ingest, query};
 use evidence_core::query::testing::{
-    MockBackend, OutOfContextBackend, RefusingBackend, UncitedBackend,
+    ApprovingSupport, MockBackend, OutOfContextBackend, RefusingBackend, RejectingSupport,
+    UncitedBackend,
 };
-use evidence_core::query::{LlmBackend, QueryError};
+use evidence_core::query::{LlmBackend, QueryError, SupportChecker};
 use evidence_core::retrieval::{EmbedError, Embedder};
 use evidence_core::storage::Storage;
 use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref, Str};
@@ -112,8 +113,15 @@ fn ingested() -> (Storage, HashEmbedder) {
 fn ingest_then_query_with_mock_backend_returns_an_answer() {
     let (storage, embedder) = ingested();
     let llm: Box<dyn LlmBackend> = Box::new(MockBackend::new());
-    let answer = query::run(&storage, &embedder, llm.as_ref(), "what is evidence?", 4)
-        .expect("query should succeed under the mock backend");
+    let answer = query::run(
+        &storage,
+        &embedder,
+        llm.as_ref(),
+        None,
+        "what is evidence?",
+        4,
+    )
+    .expect("query should succeed under the mock backend");
 
     assert!(!answer.sentences.is_empty());
     let s = &answer.sentences[0];
@@ -133,7 +141,7 @@ fn ingest_then_query_with_mock_backend_returns_an_answer() {
 fn refusing_backend_produces_refusal_message() {
     let (storage, embedder) = ingested();
     let llm: Box<dyn LlmBackend> = Box::new(RefusingBackend);
-    let err = query::run(&storage, &embedder, llm.as_ref(), "anything", 4)
+    let err = query::run(&storage, &embedder, llm.as_ref(), None, "anything", 4)
         .expect_err("RefusingBackend must surface as QueryError");
     let refusal = query::format_refusal(&err);
     assert!(
@@ -146,7 +154,7 @@ fn refusing_backend_produces_refusal_message() {
 fn uncited_sentence_is_rejected_by_validator() {
     let (storage, embedder) = ingested();
     let llm: Box<dyn LlmBackend> = Box::new(UncitedBackend);
-    let err = query::run(&storage, &embedder, llm.as_ref(), "anything", 4)
+    let err = query::run(&storage, &embedder, llm.as_ref(), None, "anything", 4)
         .expect_err("uncited sentence must be rejected");
     assert!(matches!(err, QueryError::Uncited { .. }));
 }
@@ -158,10 +166,47 @@ fn out_of_context_citation_is_rejected_by_validator() {
     let llm: Box<dyn LlmBackend> = Box::new(OutOfContextBackend {
         bogus_span_id: 999_999,
     });
-    let err = query::run(&storage, &embedder, llm.as_ref(), "anything", 4)
+    let err = query::run(&storage, &embedder, llm.as_ref(), None, "anything", 4)
         .expect_err("bogus span_id must be rejected");
     assert!(
         matches!(err, QueryError::OutOfContext { .. }),
         "expected OutOfContext, got {err:?}",
+    );
+}
+
+#[test]
+fn approving_support_check_passes_through() {
+    let (storage, embedder) = ingested();
+    let llm: Box<dyn LlmBackend> = Box::new(MockBackend::new());
+    let support: Box<dyn SupportChecker> = Box::new(ApprovingSupport);
+    let answer = query::run(
+        &storage,
+        &embedder,
+        llm.as_ref(),
+        Some(support.as_ref()),
+        "what is evidence?",
+        4,
+    )
+    .expect("ApprovingSupport must not block the validated answer");
+    assert!(!answer.sentences.is_empty());
+}
+
+#[test]
+fn rejecting_support_check_blocks_otherwise_valid_answer() {
+    let (storage, embedder) = ingested();
+    let llm: Box<dyn LlmBackend> = Box::new(MockBackend::new());
+    let support: Box<dyn SupportChecker> = Box::new(RejectingSupport);
+    let err = query::run(
+        &storage,
+        &embedder,
+        llm.as_ref(),
+        Some(support.as_ref()),
+        "what is evidence?",
+        4,
+    )
+    .expect_err("RejectingSupport must turn a clean answer into a refusal");
+    assert!(
+        matches!(err, QueryError::Unsupported { .. }),
+        "expected Unsupported, got {err:?}",
     );
 }

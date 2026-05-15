@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reranker score, matching the larger-is-better contract.
 - `HybridError::Rerank` variant wrapping `RerankError`.
 - CI cache key updated to cover both models under `.fastembed_cache/` (#12).
+- `query::SupportChecker` trait + `RerankerSupportChecker` shipping
+  implementation that uses a cross-encoder as a proxy for entailment.
+  `answer_query` takes an `Option<&dyn SupportChecker>`; `None` keeps
+  v0.1.0 behavior. New `QueryError::Unsupported` variant for the
+  refusal path. CLI: `--check-support` flag opts in (downloads
+  `bge-reranker-base` on first use). `query::testing::{ApprovingSupport,
+  RejectingSupport}` mocks (#13).
+
+### Changed
+- `answer_query` signature gained a trailing `support` parameter.
+  Update callers to pass `None` to preserve v0.1.0 behavior.
 
 ## [0.1.0] — 2026-05-15
 
