@@ -7,4 +7,7 @@
 pub mod pdf;
 pub mod pipeline;
 
-pub use pipeline::{ingest_pdf, IngestError, IngestSummary, MAX_CHUNK_BYTES};
+pub use pipeline::{
+    ingest_pdf, ingest_pdf_with_progress, IngestError, IngestProgress, IngestStage, IngestSummary,
+    NoIngestProgress, MAX_CHUNK_BYTES,
+};

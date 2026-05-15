@@ -15,6 +15,7 @@
 use std::path::Path;
 
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod migrations;
@@ -84,4 +85,50 @@ impl Storage {
     pub fn conn_mut(&mut self) -> &mut Connection {
         &mut self.conn
     }
+
+    /// Read every document in the index, newest-first by `ingested_at`.
+    /// `limit` and `offset` paginate; pass `limit = usize::MAX` to skip
+    /// the cap.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Sqlite`] for query failures.
+    pub fn list_documents(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<DocumentInfo>, StorageError> {
+        let limit_i64 = i64::try_from(limit).unwrap_or(i64::MAX);
+        let offset_i64 = i64::try_from(offset).unwrap_or(0);
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, sha256, title, page_count, ingested_at \
+             FROM documents \
+             ORDER BY ingested_at DESC, id DESC \
+             LIMIT ? OFFSET ?",
+        )?;
+        let rows = stmt
+            .query_map([limit_i64, offset_i64], |row| {
+                Ok(DocumentInfo {
+                    id: row.get(0)?,
+                    sha256: row.get(1)?,
+                    title: row.get(2)?,
+                    page_count: row.get(3)?,
+                    ingested_at: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+}
+
+/// Lightweight summary of a row in `documents`. Returned by
+/// [`Storage::list_documents`]; carries enough to render a library
+/// table without pulling page text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DocumentInfo {
+    pub id: i64,
+    pub sha256: String,
+    pub title: Option<String>,
+    pub page_count: i64,
+    pub ingested_at: i64,
 }
