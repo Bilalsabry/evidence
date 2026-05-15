@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ChunkHit` records with sign-flipped (higher-is-better) scores and the
   underlying span range. Migration 003 installs three triggers that keep
   `chunks_fts` in lockstep with `chunks` on INSERT/UPDATE/DELETE (#3).
+- `retrieval::Embedder` trait + `BgeSmall` implementation (`fastembed`'s
+  `bge-small-en-v1.5`, 384 dims, model auto-downloaded on first use).
+- `retrieval::vector_search` and `retrieval::upsert_chunk_embedding` —
+  KNN over `chunks_vec` using vec0's `k = ?` constraint; upsert deletes
+  the prior row before insert because vec0 doesn't support `ON CONFLICT`.
+- `retrieval::hybrid_search` + `rrf` — Reciprocal Rank Fusion combiner
+  (default `k_rrf = 60`) over BM25 and vector hits, producing a single
+  ranked `Vec<ChunkHit>`. Empty / whitespace queries short-circuit and
+  skip the embedder (#4).
 
 ### Changed
 - Crate root: `forbid(unsafe_code)` → `deny(unsafe_code)`. The single

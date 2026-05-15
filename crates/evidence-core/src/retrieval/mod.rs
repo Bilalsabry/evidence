@@ -8,8 +8,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod bm25;
+pub mod embed;
+pub mod hybrid;
+pub mod vector;
 
 pub use bm25::bm25_search;
+pub use embed::{BgeSmall, EmbedError, Embedder, BGE_SMALL_DIM};
+pub use hybrid::{hybrid_search, rrf};
+pub use vector::{upsert_chunk_embedding, vector_search};
 
 /// A single retrieval result. Identifies the chunk and the span range it
 /// covers; [`score`](Self::score) is retriever-specific and comparable only
