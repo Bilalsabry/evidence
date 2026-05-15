@@ -25,8 +25,9 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
-    fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, render_report,
-    run_with_mode, write_markdown, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
+    fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, render_for_pdf,
+    render_report, run_with_mode, write_markdown, AuthorOptions, FetchConfig, InjectionConfig,
+    Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -78,6 +79,24 @@ enum Command {
         /// Path to a TOML eval dataset.
         dataset: PathBuf,
     },
+    /// Render a TOML authoring skeleton from a PDF. Lists every span
+    /// (with assigned IDs) as a comment block, followed by an empty
+    /// `[[example]]` block to fill in. Pipe to a file, edit, and run
+    /// `evidence-eval lint` before `run`.
+    Author {
+        /// Path to the source PDF.
+        #[arg(long)]
+        pdf: PathBuf,
+        /// Only list spans on this 1-indexed page. Omit to list all.
+        #[arg(long)]
+        page: Option<u32>,
+        /// Suggested `name` for the skeleton `[[example]]` block.
+        #[arg(long, default_value = "FILL_IN_AUTHOR_NAME")]
+        name: String,
+        /// Suggested `class` for the skeleton `[[example]]` block.
+        #[arg(long, default_value = "valid")]
+        class: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -123,7 +142,30 @@ fn real_main() -> Result<ExitCode> {
             } => fetch_dailymed_command(&output, limit, delay_ms),
         },
         Command::Lint { dataset } => lint_command(&dataset),
+        Command::Author {
+            pdf,
+            page,
+            name,
+            class,
+        } => author_command(&pdf, page, name, class),
     }
+}
+
+fn author_command(
+    pdf: &std::path::Path,
+    page: Option<u32>,
+    name: String,
+    class: String,
+) -> Result<ExitCode> {
+    let options = AuthorOptions {
+        page,
+        name,
+        class,
+        ..AuthorOptions::default()
+    };
+    let rendered = render_for_pdf(pdf, &options).context("rendering author template")?;
+    print!("{rendered}");
+    Ok(ExitCode::SUCCESS)
 }
 
 fn lint_command(dataset_path: &std::path::Path) -> Result<ExitCode> {
