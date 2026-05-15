@@ -8,7 +8,7 @@ use evidence_core::query::{NliCrossEncoder, NliSupportChecker, SupportChecker, S
 
 #[test]
 fn nli_cross_encoder_classifies_all_three_verdicts() {
-    let encoder = NliCrossEncoder::new().expect("downloading + loading the default NLI model");
+    let encoder = NliCrossEncoder::shared().expect("downloading + loading the default NLI model");
 
     let pairs: &[(&str, &str, SupportVerdict, &str)] = &[
         (
@@ -42,7 +42,7 @@ fn nli_cross_encoder_classifies_all_three_verdicts() {
 
 #[test]
 fn nli_support_checker_aggregates_strict_wins() {
-    let encoder = NliCrossEncoder::new().expect("nli encoder");
+    let encoder = NliCrossEncoder::shared().expect("nli encoder");
     let checker = NliSupportChecker::new(&encoder);
 
     // Two supporting + one contradicting → Contradicts must win.
@@ -81,7 +81,7 @@ fn nli_support_checker_aggregates_strict_wins() {
 
 #[test]
 fn nli_support_checker_returns_neutral_for_no_citations() {
-    let encoder = NliCrossEncoder::new().expect("nli encoder");
+    let encoder = NliCrossEncoder::shared().expect("nli encoder");
     let checker = NliSupportChecker::new(&encoder);
     let v = checker
         .check("anything goes", &[])
