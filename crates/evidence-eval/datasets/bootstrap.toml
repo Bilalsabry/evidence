@@ -198,3 +198,284 @@ prompt_chunks = [
 response_sentences = [
     { text = "Pregnant women and patients under 18 are eligible for the trial.", cited_spans = [120] },
 ]
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Expansion set: 18 additional examples, 3 per class. Pharma /
+# clinical-trial / FDA-label flavored content. Designed to also be
+# tractable for a real NLI cross-encoder (the entailment classes use
+# pairs that a standard MNLI model should classify consistently with the
+# class label).
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ──────────────────────────────────── valid (more) ────────────────────────────
+
+[[example]]
+name = "valid_dose_titration"
+class = "valid"
+description = "A clinical-dosing claim cited to its source span on page 2."
+corpus_spans = [
+    { id = 200, page = 2, text = "Pembrolizumab was administered intravenously at 200 mg every 21 days." },
+]
+prompt_chunks = [
+    { id = 200, span_range = [200, 200], text = "Pembrolizumab was administered intravenously at 200 mg every 21 days." },
+]
+response_sentences = [
+    { text = "Pembrolizumab was administered intravenously at 200 mg every 21 days.", cited_spans = [200] },
+]
+
+[[example]]
+name = "valid_two_spans_one_sentence"
+class = "valid"
+description = "A single claim that cites two supporting spans together."
+corpus_spans = [
+    { id = 210, page = 4, text = "The intent-to-treat population included all randomized patients." },
+    { id = 211, page = 4, text = "Median follow-up was 18.4 months at the data cutoff." },
+]
+prompt_chunks = [
+    { id = 210, span_range = [210, 210], text = "The intent-to-treat population included all randomized patients." },
+    { id = 211, span_range = [211, 211], text = "Median follow-up was 18.4 months at the data cutoff." },
+]
+response_sentences = [
+    { text = "The intent-to-treat population included all randomized patients, with median follow-up of 18.4 months.", cited_spans = [210, 211] },
+]
+
+[[example]]
+name = "valid_chunk_with_span_range"
+class = "valid"
+description = "A chunk carries a multi-span range; the citation falls inside the range."
+corpus_spans = [
+    { id = 220, page = 5, text = "Adverse events were graded per CTCAE v5.0 by site investigators." },
+    { id = 221, page = 5, text = "Grade 3+ events were reported to the sponsor within 24 hours." },
+    { id = 222, page = 5, text = "Serious adverse events triggered an unblinded data review." },
+]
+prompt_chunks = [
+    { id = 220, span_range = [220, 222], text = "Adverse events were graded per CTCAE v5.0 by site investigators. Grade 3+ events were reported to the sponsor within 24 hours. Serious adverse events triggered an unblinded data review." },
+]
+response_sentences = [
+    { text = "Grade 3+ adverse events were reported to the sponsor within 24 hours.", cited_spans = [221] },
+]
+
+# ──────────────────────────────── uncited (more) ──────────────────────────────
+
+[[example]]
+name = "uncited_silent_recommendation"
+class = "uncited"
+description = "The model produces a recommendation without citing any span."
+corpus_spans = [
+    { id = 230, page = 1, text = "The trial protocol specifies blood draws at week 0, 12, and 24." },
+]
+prompt_chunks = [
+    { id = 230, span_range = [230, 230], text = "The trial protocol specifies blood draws at week 0, 12, and 24." },
+]
+response_sentences = [
+    { text = "You should follow the standard blood-draw schedule.", cited_spans = [] },
+]
+
+[[example]]
+name = "uncited_explicit_quotation"
+class = "uncited"
+description = "Model verbatim-quotes a span but doesn't carry the span_id citation."
+corpus_spans = [
+    { id = 240, page = 1, text = "The primary endpoint was overall survival at 24 months." },
+]
+prompt_chunks = [
+    { id = 240, span_range = [240, 240], text = "The primary endpoint was overall survival at 24 months." },
+]
+response_sentences = [
+    { text = "The primary endpoint was overall survival at 24 months.", cited_spans = [] },
+]
+
+[[example]]
+name = "uncited_synthesis"
+class = "uncited"
+description = "Model synthesizes across two spans into a new sentence with no citation."
+corpus_spans = [
+    { id = 250, page = 1, text = "The treatment arm received pembrolizumab plus chemotherapy." },
+    { id = 251, page = 1, text = "The control arm received chemotherapy alone." },
+]
+prompt_chunks = [
+    { id = 250, span_range = [250, 251], text = "The treatment arm received pembrolizumab plus chemotherapy. The control arm received chemotherapy alone." },
+]
+response_sentences = [
+    { text = "Treatment differed only by the addition of pembrolizumab.", cited_spans = [] },
+]
+
+# ──────────────────────────── fabricated_span (more) ──────────────────────────
+
+[[example]]
+name = "fabricated_span_negative_id"
+class = "fabricated_span"
+description = "Model emits a negative integer as a span_id."
+corpus_spans = [
+    { id = 260, page = 1, text = "The dosing schedule was reviewed by the safety committee." },
+]
+prompt_chunks = [
+    { id = 260, span_range = [260, 260], text = "The dosing schedule was reviewed by the safety committee." },
+]
+response_sentences = [
+    { text = "The dosing schedule was reviewed by the safety committee.", cited_spans = [-1] },
+]
+
+[[example]]
+name = "fabricated_span_huge_id"
+class = "fabricated_span"
+description = "Model emits a span_id orders of magnitude larger than anything in the DB."
+corpus_spans = [
+    { id = 270, page = 1, text = "Median age at enrollment was 64 years." },
+]
+prompt_chunks = [
+    { id = 270, span_range = [270, 270], text = "Median age at enrollment was 64 years." },
+]
+response_sentences = [
+    { text = "Median age at enrollment was 64 years.", cited_spans = [9_999_999] },
+]
+
+[[example]]
+name = "fabricated_span_mix_real_and_fake"
+class = "fabricated_span"
+description = "Model cites two spans for the same sentence; one is real, one is fabricated. Validator must catch the fabricated one."
+corpus_spans = [
+    { id = 280, page = 1, text = "Median age at enrollment was 64 years." },
+]
+prompt_chunks = [
+    { id = 280, span_range = [280, 280], text = "Median age at enrollment was 64 years." },
+]
+response_sentences = [
+    { text = "Median age at enrollment was 64 years.", cited_spans = [280, 281] },
+]
+
+# ───────────────────────────── out_of_context (more) ──────────────────────────
+
+[[example]]
+name = "out_of_context_other_document"
+class = "out_of_context"
+description = "Cited span lives in a different document — the model reached into the corpus."
+corpus_spans = [
+    { id = 290, page = 1, text = "The primary endpoint was overall survival at 24 months." },
+    { id = 291, page = 10, text = "Secondary endpoints included quality-of-life scores." },
+]
+prompt_chunks = [
+    { id = 290, span_range = [290, 290], text = "The primary endpoint was overall survival at 24 months." },
+]
+response_sentences = [
+    { text = "Secondary endpoints included quality-of-life scores.", cited_spans = [291] },
+]
+
+[[example]]
+name = "out_of_context_off_by_one_span"
+class = "out_of_context"
+description = "Real spans 300, 301, 302 in DB; prompt shows only chunk covering [300,300]; model cites 302."
+corpus_spans = [
+    { id = 300, page = 1, text = "All patients gave written informed consent." },
+    { id = 301, page = 2, text = "Tissue samples were collected at baseline." },
+    { id = 302, page = 3, text = "Statistical analyses were pre-specified in the SAP." },
+]
+prompt_chunks = [
+    { id = 300, span_range = [300, 300], text = "All patients gave written informed consent." },
+]
+response_sentences = [
+    { text = "Statistical analyses were pre-specified in the SAP.", cited_spans = [302] },
+]
+
+[[example]]
+name = "out_of_context_real_but_unrelated"
+class = "out_of_context"
+description = "Span 311 exists and is plausibly related, but it wasn't shown — the model fabricated the connection."
+corpus_spans = [
+    { id = 310, page = 1, text = "Patients underwent a 28-day washout period before randomization." },
+    { id = 311, page = 7, text = "The CYP3A4 metabolism pathway is documented in section 4.3." },
+]
+prompt_chunks = [
+    { id = 310, span_range = [310, 310], text = "Patients underwent a 28-day washout period before randomization." },
+]
+response_sentences = [
+    { text = "The CYP3A4 metabolism pathway is documented in section 4.3.", cited_spans = [311] },
+]
+
+# ──────────────────────────────── unsupported (more) ──────────────────────────
+
+[[example]]
+name = "unsupported_definitional_vs_application"
+class = "unsupported"
+description = "Cited span defines a term; sentence makes a specific application claim that isn't entailed."
+corpus_spans = [
+    { id = 320, page = 1, text = "Per protocol, an 'evaluable patient' is one who completed at least 4 cycles of therapy." },
+]
+prompt_chunks = [
+    { id = 320, span_range = [320, 320], text = "Per protocol, an 'evaluable patient' is one who completed at least 4 cycles of therapy." },
+]
+response_sentences = [
+    { text = "82 percent of patients enrolled were evaluable.", cited_spans = [320] },
+]
+
+[[example]]
+name = "unsupported_structural_header"
+class = "unsupported"
+description = "Cited span is a header / table caption; sentence claims a specific data point."
+corpus_spans = [
+    { id = 330, page = 8, text = "Table 4. Demographic characteristics of the safety population." },
+]
+prompt_chunks = [
+    { id = 330, span_range = [330, 330], text = "Table 4. Demographic characteristics of the safety population." },
+]
+response_sentences = [
+    { text = "57 percent of the safety population was female.", cited_spans = [330] },
+]
+
+[[example]]
+name = "unsupported_inference_from_unrelated"
+class = "unsupported"
+description = "Cited span describes site logistics; sentence claims a clinical outcome."
+corpus_spans = [
+    { id = 340, page = 1, text = "The study was conducted across 42 sites in 11 countries." },
+]
+prompt_chunks = [
+    { id = 340, span_range = [340, 340], text = "The study was conducted across 42 sites in 11 countries." },
+]
+response_sentences = [
+    { text = "Treatment was generally well tolerated across the study population.", cited_spans = [340] },
+]
+
+# ──────────────────────────────── contradicted (more) ─────────────────────────
+
+[[example]]
+name = "contradicted_dose_disagreement"
+class = "contradicted"
+description = "Cited span says 200 mg; model says 400 mg."
+corpus_spans = [
+    { id = 350, page = 1, text = "Pembrolizumab was administered intravenously at 200 mg every 21 days." },
+]
+prompt_chunks = [
+    { id = 350, span_range = [350, 350], text = "Pembrolizumab was administered intravenously at 200 mg every 21 days." },
+]
+response_sentences = [
+    { text = "Pembrolizumab was administered at 400 mg every 21 days.", cited_spans = [350] },
+]
+
+[[example]]
+name = "contradicted_temporal_disagreement"
+class = "contradicted"
+description = "Cited span says 24 months; model says 48 months."
+corpus_spans = [
+    { id = 360, page = 1, text = "The primary endpoint was overall survival at 24 months." },
+]
+prompt_chunks = [
+    { id = 360, span_range = [360, 360], text = "The primary endpoint was overall survival at 24 months." },
+]
+response_sentences = [
+    { text = "The primary endpoint was overall survival at 48 months.", cited_spans = [360] },
+]
+
+[[example]]
+name = "contradicted_negation_flip"
+class = "contradicted"
+description = "Cited span says the protocol *did* allow X; model says it *did not*."
+corpus_spans = [
+    { id = 370, page = 1, text = "Prior treatment with anti-PD-1 therapy was permitted at the investigator's discretion." },
+]
+prompt_chunks = [
+    { id = 370, span_range = [370, 370], text = "Prior treatment with anti-PD-1 therapy was permitted at the investigator's discretion." },
+]
+response_sentences = [
+    { text = "Prior treatment with anti-PD-1 therapy was not permitted.", cited_spans = [370] },
+]
