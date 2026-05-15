@@ -52,6 +52,25 @@ pub struct ResponseSentence {
     pub cited_spans: Vec<i64>,
 }
 
+/// An author-supplied support mutation. Hand-crafted contrast-set
+/// rewrites of a *valid* example's response sentence. Each mutation
+/// names the failure class it's meant to induce (`Unsupported` for
+/// off-topic substitutions, `Contradicted` for negation flips / number
+/// perturbations / entity swaps).
+///
+/// The injection harness uses these to derive matched-pair support
+/// failures from each valid example (see [`crate::inject`]).
+#[derive(Debug, Clone, Deserialize)]
+pub struct SupportMutation {
+    /// The rewritten sentence text. The cited spans remain the same as
+    /// the parent; the change is in the *claim* the citation backs.
+    pub text: String,
+    /// The class the author intends this mutation to induce.
+    /// Must be `Unsupported` or `Contradicted`; the loader rejects
+    /// other classes.
+    pub class: HallucinationClass,
+}
+
 /// One labeled scenario.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Example {
@@ -62,6 +81,12 @@ pub struct Example {
     pub corpus_spans: Vec<CorpusSpan>,
     pub prompt_chunks: Vec<PromptChunk>,
     pub response_sentences: Vec<ResponseSentence>,
+    /// Author-supplied contrast-set mutations for the support gate.
+    /// Meaningful only when `class == Valid` — the injection harness
+    /// applies each mutation to the parent's sentence to derive a
+    /// matched-pair support failure. Empty by default.
+    #[serde(default)]
+    pub support_mutations: Vec<SupportMutation>,
 }
 
 /// A whole dataset.
