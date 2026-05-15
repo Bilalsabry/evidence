@@ -10,6 +10,10 @@ description = "Core ingestion, retrieval, and citation logic for evidence."
 [dependencies]
 pdfium-render = "0.8"
 pdfium-auto = "0.3"
+rusqlite = { version = "0.39", features = ["bundled"] }
+sqlite-vec = "0.1.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
 
 [dev-dependencies]
