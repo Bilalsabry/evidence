@@ -21,4 +21,4 @@ pub mod runner;
 
 pub use dataset::{load_dataset, Dataset, Example, HallucinationClass};
 pub use report::{write_markdown, Report};
-pub use runner::{run, Outcome, Policy, RunResult};
+pub use runner::{run, run_with_mode, Outcome, Policy, RunResult, SupportMode};
