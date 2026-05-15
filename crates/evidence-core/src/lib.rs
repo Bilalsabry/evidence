@@ -1,8 +1,13 @@
 //! Core ingestion, retrieval, and citation logic for evidence.
+//!
+//! `unsafe_code` is denied at the crate root; the only escape hatch is the
+//! sqlite-vec auto-extension registration in [`storage::vec`], where FFI is
+//! unavoidable and the call is documented and confined to a `Once`.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod ingest;
+pub mod storage;
 
 /// Returns the current crate version.
 #[must_use]
