@@ -9,10 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use pdfium_render::prelude::{PdfRect, Pdfium, PdfiumError};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Rectangle in PDF page coordinates: PDF points, origin at the bottom-left.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Bbox {
     pub x0: f32,
     pub y0: f32,

@@ -14,7 +14,7 @@ pub mod vector;
 
 pub use bm25::bm25_search;
 pub use embed::{BgeSmall, EmbedError, Embedder, BGE_SMALL_DIM};
-pub use hybrid::{hybrid_search, rrf};
+pub use hybrid::{hybrid_search, rrf, HybridError};
 pub use vector::{upsert_chunk_embedding, vector_search};
 
 /// A single retrieval result. Identifies the chunk and the span range it

@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (default `k_rrf = 60`) over BM25 and vector hits, producing a single
   ranked `Vec<ChunkHit>`. Empty / whitespace queries short-circuit and
   skip the embedder (#4).
+- `ingest::ingest_pdf` — end-to-end pipeline that parses a PDF, writes
+  pages/spans/chunks/embeddings in one transaction, and refuses to
+  re-ingest a document with a matching SHA-256.
+- `query::answer_query` — full QA path: hybrid retrieve, prompt the LLM,
+  validate citations, resolve each citation to `{ span_id, doc_id,
+  page_num, start_offset, end_offset }`. Refuses any sentence without a
+  citation, or with a citation outside the chunks shown.
+- `query::LlmBackend` trait + `query::testing::{MockBackend,
+  RefusingBackend, UncitedBackend, OutOfContextBackend}`.
+- `evidence` CLI with `ingest <pdf>` and `query <text>` subcommands.
+  `query` exits with status `2` if the validator refuses.
+- `evidence_cli::ollama::OllamaBackend` — HTTP backend talking to a
+  local Ollama server. Uses `format: "json"` plus a strict prompt that
+  documents the no-citation refusal path (#5).
 
 ### Changed
 - Crate root: `forbid(unsafe_code)` → `deny(unsafe_code)`. The single
