@@ -77,3 +77,4 @@ If only (1) holds, the work was scientifically valid and we publish on arXiv. If
 ## Revision log
 
 - **2026-05-15** — Initial draft. Framing synthesized from the strategic plan + the work shipped through PR #29. Reviewer reads pending.
+- **2026-05-15** — First-pass prior-art reads completed by Claude (training-data knowledge, no live web). See [`prior-art-reading.md`](prior-art-reading.md) and [`related-work-table.md`](related-work-table.md). **Kernel holds.** One defensive caveat noted on ALCE: their construction bakes rules 1 and 2 away, which makes our work *the explicit form* of what ALCE smuggles into its setup. The empirical defense is to measure how often real LLMs violate those assumptions in deployment. Pending: human verification of the reads, live 2024-2025 arXiv scan, send to one trusted external reader.
