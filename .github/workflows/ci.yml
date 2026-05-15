@@ -42,16 +42,18 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Cache the fastembed ONNX models so cold-run CI doesn't re-download
-      # ~400 MB on every push (bge-small + bge-reranker-base). Bumping the
-      # `-v<n>` suffix busts the cache when we change models.
-      - name: Cache fastembed models
+      # Cache the ONNX models downloaded by fastembed (under
+      # `.fastembed_cache/`) and by `hf-hub` directly (under
+      # `~/.cache/huggingface/`, used by the NLI cross-encoder). Bumping
+      # the `-v<n>` suffix busts the cache when we change any model.
+      - name: Cache ONNX models
         uses: actions/cache@v4
         with:
           path: |
             .fastembed_cache
             ~/.cache/fastembed
-          key: fastembed-bge-small-v1.5+reranker-base-v2
+            ~/.cache/huggingface
+          key: onnx-bge-small-v1.5+reranker-base+distilbert-mnli-v3
       # Cache the pdfium-binaries shared library that `pdfium-auto`
       # downloads on first use. Avoids hitting GitHub Releases every CI run
       # — both for speed and to dodge transient 5xx / rate limits from the

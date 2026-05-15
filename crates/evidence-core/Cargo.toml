@@ -9,6 +9,9 @@ description = "Core ingestion, retrieval, and citation logic for evidence."
 
 [dependencies]
 fastembed = "5"
+hf-hub = { version = "0.5", default-features = false, features = ["ureq", "native-tls"] }
+ndarray = "0.17"
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries", "ndarray"] }
 pdfium-render = "0.8"
 pdfium-auto = "0.3"
 rusqlite = { version = "0.39", features = ["bundled"] }
@@ -17,6 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
+tokenizers = { version = "0.22", default-features = false, features = ["onig"] }
 
 [dev-dependencies]
 tempfile = "3"

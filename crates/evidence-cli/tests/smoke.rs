@@ -7,8 +7,8 @@ use std::io::Write;
 
 use evidence_cli::commands::{ingest, query};
 use evidence_core::query::testing::{
-    ApprovingSupport, MockBackend, OutOfContextBackend, RefusingBackend, RejectingSupport,
-    UncitedBackend,
+    ApprovingSupport, ContradictingSupport, MockBackend, OutOfContextBackend, RefusingBackend,
+    RejectingSupport, UncitedBackend,
 };
 use evidence_core::query::{LlmBackend, QueryError, SupportChecker};
 use evidence_core::retrieval::{EmbedError, Embedder};
@@ -189,6 +189,26 @@ fn approving_support_check_passes_through() {
     )
     .expect("ApprovingSupport must not block the validated answer");
     assert!(!answer.sentences.is_empty());
+}
+
+#[test]
+fn contradicting_support_check_surfaces_contradicted_variant() {
+    let (storage, embedder) = ingested();
+    let llm: Box<dyn LlmBackend> = Box::new(MockBackend::new());
+    let support: Box<dyn SupportChecker> = Box::new(ContradictingSupport);
+    let err = query::run(
+        &storage,
+        &embedder,
+        llm.as_ref(),
+        Some(support.as_ref()),
+        "what is evidence?",
+        4,
+    )
+    .expect_err("ContradictingSupport must turn answers into Contradicted refusals");
+    assert!(
+        matches!(err, QueryError::Contradicted { .. }),
+        "expected Contradicted, got {err:?}",
+    );
 }
 
 #[test]

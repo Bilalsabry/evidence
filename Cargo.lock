@@ -1304,6 +1304,9 @@ name = "evidence-core"
 version = "0.0.1"
 dependencies = [
  "fastembed",
+ "hf-hub",
+ "ndarray",
+ "ort",
  "pdf-writer",
  "pdfium-auto",
  "pdfium-render",
@@ -1314,6 +1317,7 @@ dependencies = [
  "sqlite-vec",
  "tempfile",
  "thiserror 2.0.18",
+ "tokenizers",
 ]
 
 [[package]]

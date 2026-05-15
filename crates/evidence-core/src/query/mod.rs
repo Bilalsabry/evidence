@@ -20,9 +20,11 @@ use thiserror::Error;
 use crate::retrieval::{hybrid_search, Embedder, HybridError};
 use crate::storage::Storage;
 
+pub mod nli;
 pub mod support;
 pub mod testing;
 
+pub use nli::{NliCrossEncoder, NliError, NliSupportChecker, DEFAULT_NLI_MODEL_REPO};
 pub use support::{
     RerankerSupportChecker, SupportChecker, SupportError, SupportVerdict, SUPPORTED_THRESHOLD,
 };
@@ -127,6 +129,8 @@ pub enum QueryError {
     UnknownSpan { span_id: i64 },
     #[error("cited spans do not lexically support the sentence: {sentence}")]
     Unsupported { sentence: String },
+    #[error("cited spans contradict the sentence: {sentence}")]
+    Contradicted { sentence: String },
 }
 
 /// Full query pipeline: retrieve → prompt LLM → validate citations →
@@ -203,8 +207,13 @@ fn validate_and_resolve(
             let refs: Vec<&str> = cited_texts.iter().map(String::as_str).collect();
             match checker.check(&sentence.text, &refs)? {
                 SupportVerdict::Supports => {}
-                SupportVerdict::Insufficient => {
+                SupportVerdict::Neutral => {
                     return Err(QueryError::Unsupported {
+                        sentence: sentence.text.clone(),
+                    });
+                }
+                SupportVerdict::Contradicts => {
+                    return Err(QueryError::Contradicted {
                         sentence: sentence.text.clone(),
                     });
                 }

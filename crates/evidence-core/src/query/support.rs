@@ -15,6 +15,7 @@
 
 use thiserror::Error;
 
+use super::nli::NliError;
 use crate::retrieval::{RerankError, Reranker};
 
 /// Default score threshold above which a span is taken to support a
@@ -23,12 +24,20 @@ use crate::retrieval::{RerankError, Reranker};
 pub const SUPPORTED_THRESHOLD: f32 = -2.0;
 
 /// The verdict for one (sentence, supporting-spans) pair.
+///
+/// Three states, mirroring textbook NLI labels. `RerankerSupportChecker`
+/// (the v0.2 proxy) emits only `Supports` and `Neutral` — it can't tell
+/// `Contradicts` apart. The NLI cross-encoder shipped in v0.3 produces all
+/// three. The validator refuses on either `Neutral` or `Contradicts`, but
+/// keeps the two distinct so callers can render a more useful refusal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupportVerdict {
-    /// At least one cited span supports the sentence.
+    /// At least one cited span entails the sentence.
     Supports,
-    /// No cited span clears the support threshold.
-    Insufficient,
+    /// No cited span entails the sentence, but none contradicts it either.
+    Neutral,
+    /// At least one cited span contradicts the sentence.
+    Contradicts,
 }
 
 /// Errors surfaced by a [`SupportChecker`].
@@ -36,13 +45,15 @@ pub enum SupportVerdict {
 pub enum SupportError {
     #[error(transparent)]
     Rerank(#[from] RerankError),
+    #[error(transparent)]
+    Nli(#[from] NliError),
 }
 
 /// Decide whether a sentence is supported by the spans cited for it.
 pub trait SupportChecker: Send + Sync {
     /// Returns the verdict for `sentence` given `cited_texts` — the literal
     /// text of every span cited for that sentence. An empty `cited_texts`
-    /// **must** return [`SupportVerdict::Insufficient`].
+    /// **must** return [`SupportVerdict::Neutral`].
     ///
     /// # Errors
     ///
@@ -80,16 +91,21 @@ impl<'a> RerankerSupportChecker<'a> {
 }
 
 impl<'a> SupportChecker for RerankerSupportChecker<'a> {
+    /// Cross-encoder relevance has no notion of contradiction — it only
+    /// scores "how related is this?". So this implementation collapses the
+    /// 3-state verdict into `Supports` or `Neutral` and never returns
+    /// `Contradicts`. For real contradiction detection use the NLI-backed
+    /// `NliSupportChecker` from [`super::nli`].
     fn check(&self, sentence: &str, cited_texts: &[&str]) -> Result<SupportVerdict, SupportError> {
         if cited_texts.is_empty() {
-            return Ok(SupportVerdict::Insufficient);
+            return Ok(SupportVerdict::Neutral);
         }
         let hits = self.reranker.rerank(sentence, cited_texts)?;
         let supported = hits.iter().any(|h| h.score >= self.threshold);
         Ok(if supported {
             SupportVerdict::Supports
         } else {
-            SupportVerdict::Insufficient
+            SupportVerdict::Neutral
         })
     }
 }
