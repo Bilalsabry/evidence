@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ingest;
+
 /// Returns the current crate version.
 #[must_use]
 pub fn version() -> &'static str {
