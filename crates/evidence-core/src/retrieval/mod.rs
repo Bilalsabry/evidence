@@ -10,11 +10,13 @@ use thiserror::Error;
 pub mod bm25;
 pub mod embed;
 pub mod hybrid;
+pub mod rerank;
 pub mod vector;
 
 pub use bm25::bm25_search;
 pub use embed::{BgeSmall, EmbedError, Embedder, BGE_SMALL_DIM};
-pub use hybrid::{hybrid_search, rrf, HybridError};
+pub use hybrid::{hybrid_search, hybrid_search_with_reranker, rrf, HybridError};
+pub use rerank::{BgeReranker, RerankError, RerankHit, Reranker};
 pub use vector::{upsert_chunk_embedding, vector_search};
 
 /// A single retrieval result. Identifies the chunk and the span range it

@@ -11,7 +11,16 @@ use std::collections::HashMap;
 
 use rusqlite::Connection;
 
-use super::{bm25_search, vector::vector_search, ChunkHit, Embedder, RetrievalError};
+use super::{
+    bm25_search, rerank::RerankError, vector::vector_search, ChunkHit, Embedder, Reranker,
+    RetrievalError,
+};
+
+/// Candidate-set multiplier for the reranked path. Asking each retriever
+/// for `k * RERANK_CANDIDATE_FACTOR` candidates gives the reranker enough
+/// signal to reorder meaningfully without paying for cross-encoding the
+/// whole corpus.
+pub const RERANK_CANDIDATE_FACTOR: usize = 4;
 
 /// Default RRF constant. 60 is the value from the original paper and the de
 /// facto industry default.
@@ -118,6 +127,68 @@ pub enum HybridError {
     Retrieval(#[from] RetrievalError),
     #[error(transparent)]
     Embed(super::EmbedError),
+    #[error(transparent)]
+    Rerank(#[from] RerankError),
+}
+
+/// Like [`hybrid_search`], but pipes the fused candidate set through a
+/// cross-encoder reranker before truncation. Asks BM25 + vector for
+/// `k * RERANK_CANDIDATE_FACTOR` candidates each, fuses, reranks, then
+/// truncates to `k`. The returned [`ChunkHit::score`] is the reranker
+/// score (sign convention: larger is better, matching every other
+/// retriever here).
+///
+/// # Errors
+///
+/// Propagates [`HybridError`] from BM25, vector search, the embedder, or
+/// the reranker.
+pub fn hybrid_search_with_reranker(
+    conn: &Connection,
+    embedder: &dyn Embedder,
+    reranker: &dyn Reranker,
+    query: &str,
+    k: usize,
+) -> Result<Vec<ChunkHit>, HybridError> {
+    if k == 0 {
+        return Ok(Vec::new());
+    }
+    let candidates = k.saturating_mul(RERANK_CANDIDATE_FACTOR).max(k);
+
+    // Reuse hybrid_search to collect candidates; that already handles
+    // empty-query short-circuit and FTS sanitization.
+    let fused = hybrid_search(conn, embedder, query, candidates)?;
+    if fused.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let texts: Vec<String> = fused
+        .iter()
+        .map(|hit| chunk_text(conn, hit.chunk_id))
+        .collect::<Result<_, _>>()
+        .map_err(RetrievalError::from)?;
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+
+    let rerank_hits = reranker.rerank(query.trim(), &refs)?;
+
+    // rerank_hits is sorted by descending score. Walk it and rebuild a
+    // ChunkHit list, swapping in the reranker score.
+    let mut out: Vec<ChunkHit> = rerank_hits
+        .into_iter()
+        .filter_map(|r| {
+            fused.get(r.index).map(|orig| ChunkHit {
+                score: f64::from(r.score),
+                ..orig.clone()
+            })
+        })
+        .collect();
+    out.truncate(k);
+    Ok(out)
+}
+
+fn chunk_text(conn: &Connection, chunk_id: i64) -> Result<String, rusqlite::Error> {
+    conn.query_row("SELECT text FROM chunks WHERE id = ?", [chunk_id], |r| {
+        r.get(0)
+    })
 }
 
 struct Accum {

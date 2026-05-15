@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `retrieval::Reranker` trait + `BgeReranker` (`bge-reranker-base` via
+  `fastembed`, model auto-downloads on first construction).
+- `retrieval::hybrid_search_with_reranker` runs hybrid retrieval, then
+  rescores the top `k * RERANK_CANDIDATE_FACTOR` (= 4) candidates with a
+  cross-encoder and truncates to `k`. Returned `ChunkHit::score` is the
+  reranker score, matching the larger-is-better contract.
+- `HybridError::Rerank` variant wrapping `RerankError`.
+- CI cache key updated to cover both models under `.fastembed_cache/` (#12).
+
+## [0.1.0] — 2026-05-15
+
+### Added
 - Cargo workspace skeleton (`evidence-core`, `evidence-api`, `evidence-cli`).
 - Design document and high-level architecture.
 - CI workflow: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
