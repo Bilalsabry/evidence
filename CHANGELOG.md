@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `query::ValidationPolicy` — gate-level toggles for the citation
+  validator. Constructors for `vanilla_rag`, `existence_only`,
+  `closed_loop_two_gate`, and `closed_loop_three_gate`. Used by the new
+  `evidence-eval` crate to ablate one gate at a time.
+- `query::validate_answer(storage, raw, prompt, policy)` — pure
+  validator entry point. Skips retrieval and the LLM call so the eval
+  harness can feed fixture model outputs through each policy
+  deterministically.
+- `query::answer_query_with_policy` — same as `answer_query` but
+  parameterized by a full `ValidationPolicy` instead of just an
+  `Option<&dyn SupportChecker>`.
+- **New crate `evidence-eval`**: a closed-loop citation evaluation
+  harness. Loads TOML datasets of labeled hallucination scenarios
+  (`valid`, `uncited`, `fabricated_span`, `out_of_context`,
+  `unsupported`, `contradicted`), runs each through every
+  `ValidationPolicy`, and emits a markdown catch matrix + per-example
+  detail. Bootstrap dataset has 12 examples (2 per class). Binary:
+  `cargo run -p evidence-eval -- <dataset>.toml`.
+- `docs/EVAL.md` — methodology doc and report walkthrough. Names the
+  closed-loop citation methodology and is the seed for the in-progress
+  long-form post.
 - `query::NliCrossEncoder` — real NLI cross-encoder via direct `ort` +
   `tokenizers` + `hf-hub` integration. Default model is
   `Xenova/distilbert-base-uncased-mnli` (~265 MB, auto-downloaded on
@@ -56,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `answer_query` signature gained a trailing `support` parameter.
   Update callers to pass `None` to preserve v0.1.0 behavior.
+- Validator gate order: existence now runs before in-context. A
+  fabricated span ID surfaces as `UnknownSpan` even when it also fails
+  the in-context check. This keeps the eval matrix's per-class catch
+  attribution deterministic.
 
 ### Tests
 - `evidence-cli` gains an `ollama-integration-tests` cargo feature. When

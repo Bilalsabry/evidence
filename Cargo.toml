@@ -6,7 +6,12 @@ members = ["crates/*", "apps/desktop"]
 # system-graphics deps that don't belong in `cargo build`/`cargo test` on
 # every dev machine and CI runner. Explicit opt-in via `cargo run -p
 # evidence-desktop` (or `cargo tauri dev` from `apps/desktop/`).
-default-members = ["crates/evidence-core", "crates/evidence-api", "crates/evidence-cli"]
+default-members = [
+    "crates/evidence-core",
+    "crates/evidence-api",
+    "crates/evidence-cli",
+    "crates/evidence-eval",
+]
 
 [workspace.package]
 version = "0.0.1"
