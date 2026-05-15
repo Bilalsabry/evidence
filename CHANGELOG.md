@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `user_version` pragma and is idempotent. Initial schema: `documents`,
   `pages`, `spans`, `chunks` (all `STRICT`), plus `chunks_fts` (FTS5,
   content-linked) and `chunks_vec` (`vec0`, 384-dim) virtual tables (#2).
+- `retrieval::bm25_search` — BM25 query over `chunks_fts`, returning ranked
+  `ChunkHit` records with sign-flipped (higher-is-better) scores and the
+  underlying span range. Migration 003 installs three triggers that keep
+  `chunks_fts` in lockstep with `chunks` on INSERT/UPDATE/DELETE (#3).
 
 ### Changed
 - Crate root: `forbid(unsafe_code)` → `deny(unsafe_code)`. The single

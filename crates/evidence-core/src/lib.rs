@@ -7,6 +7,7 @@
 #![deny(unsafe_code)]
 
 pub mod ingest;
+pub mod retrieval;
 pub mod storage;
 
 /// Returns the current crate version.
