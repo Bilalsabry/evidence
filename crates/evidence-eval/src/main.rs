@@ -25,8 +25,8 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
-    fetch_dailymed, inject_all_variants, load_dataset, run_with_mode, write_markdown, FetchConfig,
-    InjectionConfig, Report, SupportMode, UreqClient,
+    fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, render_report,
+    run_with_mode, write_markdown, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -69,6 +69,14 @@ enum Command {
     Fetch {
         #[command(subcommand)]
         source: FetchSource,
+    },
+    /// Lint a dataset for authoring mistakes. Exits 2 on any error,
+    /// 0 on warnings-only or clean. Run before `run` / `inject` to
+    /// catch wrong-class structure, fabricated spans that aren't
+    /// fabricated, etc.
+    Lint {
+        /// Path to a TOML eval dataset.
+        dataset: PathBuf,
     },
 }
 
@@ -114,6 +122,19 @@ fn real_main() -> Result<ExitCode> {
                 delay_ms,
             } => fetch_dailymed_command(&output, limit, delay_ms),
         },
+        Command::Lint { dataset } => lint_command(&dataset),
+    }
+}
+
+fn lint_command(dataset_path: &std::path::Path) -> Result<ExitCode> {
+    let dataset = load_dataset(dataset_path).context("loading dataset for lint")?;
+    let diags = lint(&dataset);
+    let report = render_report(&diags);
+    print!("{report}");
+    if has_errors(&diags) {
+        Ok(ExitCode::from(2))
+    } else {
+        Ok(ExitCode::SUCCESS)
     }
 }
 

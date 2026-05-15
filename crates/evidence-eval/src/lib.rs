@@ -18,6 +18,7 @@
 pub mod dataset;
 pub mod fetch;
 pub mod inject;
+pub mod lint;
 pub mod report;
 pub mod runner;
 
@@ -27,5 +28,6 @@ pub use inject::{
     inject_all_variants, inject_existence, inject_in_context, inject_support, InjectionConfig,
     InjectionError,
 };
+pub use lint::{has_errors, lint, render_report, Diagnostic, Severity};
 pub use report::{write_markdown, Report};
 pub use runner::{run, run_with_mode, Outcome, Policy, RunResult, SupportMode};
