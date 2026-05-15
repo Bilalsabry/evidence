@@ -7,9 +7,22 @@ repository.workspace = true
 rust-version.workspace = true
 description = "Headless CLI for evidence."
 
+[lib]
+name = "evidence_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "evidence"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 evidence-core = { path = "../evidence-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+
+[dev-dependencies]
+pdf-writer = "0.14"
+tempfile = "3"

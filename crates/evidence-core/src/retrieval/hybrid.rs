@@ -65,9 +65,14 @@ pub fn hybrid_search(
 ) -> Result<Vec<ChunkHit>, HybridError> {
     let candidates = k.saturating_mul(2).max(k);
 
-    let bm25_hits = bm25_search(conn, query, candidates)?;
-
     let trimmed = query.trim();
+    let sanitized = sanitize_for_fts(trimmed);
+    let bm25_hits = if sanitized.is_empty() {
+        Vec::new()
+    } else {
+        bm25_search(conn, &sanitized, candidates)?
+    };
+
     let vec_hits = if trimmed.is_empty() {
         Vec::new()
     } else {
@@ -77,6 +82,33 @@ pub fn hybrid_search(
 
     let fused = rrf(&bm25_hits, &vec_hits, DEFAULT_K_RRF);
     Ok(fused.into_iter().take(k).collect())
+}
+
+/// Project natural-language input onto a safe FTS5 OR-of-quoted-tokens
+/// query. Drops everything that isn't alphanumeric / `-` / `_`, then quotes
+/// each surviving token so FTS5 metacharacters (`?`, `*`, `-`, `:`, …)
+/// can't sneak in. Returns an empty string if nothing survives.
+#[must_use]
+pub fn sanitize_for_fts(query: &str) -> String {
+    let mut out = String::with_capacity(query.len() + 4);
+    let mut first = true;
+    for raw in query.split_whitespace() {
+        let token: String = raw
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if token.is_empty() {
+            continue;
+        }
+        if !first {
+            out.push_str(" OR ");
+        }
+        out.push('"');
+        out.push_str(&token);
+        out.push('"');
+        first = false;
+    }
+    out
 }
 
 /// Errors that surface from hybrid retrieval.
@@ -154,5 +186,24 @@ mod tests {
     #[test]
     fn rrf_returns_empty_for_empty_inputs() {
         assert!(rrf(&[], &[], DEFAULT_K_RRF).is_empty());
+    }
+
+    #[test]
+    fn sanitize_strips_fts_metacharacters() {
+        let q = sanitize_for_fts("what is evidence?");
+        assert_eq!(q, "\"what\" OR \"is\" OR \"evidence\"");
+    }
+
+    #[test]
+    fn sanitize_keeps_alphanumeric_and_underscore() {
+        let q = sanitize_for_fts("pembrolizumab_v2 trial");
+        assert_eq!(q, "\"pembrolizumab_v2\" OR \"trial\"");
+    }
+
+    #[test]
+    fn sanitize_empty_when_nothing_survives() {
+        assert!(sanitize_for_fts("---???***").is_empty());
+        assert!(sanitize_for_fts("").is_empty());
+        assert!(sanitize_for_fts("   ").is_empty());
     }
 }

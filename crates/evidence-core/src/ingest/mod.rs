@@ -5,3 +5,6 @@
 //! retrieval consume those records; the ingest layer is otherwise stateless.
 
 pub mod pdf;
+pub mod pipeline;
+
+pub use pipeline::{ingest_pdf, IngestError, IngestSummary, MAX_CHUNK_BYTES};

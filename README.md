@@ -32,7 +32,7 @@ Full design: [`docs/DESIGN.md`](docs/DESIGN.md).
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
-| `v0.1.0` | Headless ingest + hybrid retrieval + naive citations (CLI) | In progress |
+| `v0.1.0` | Headless ingest + hybrid retrieval + naive citations (CLI) | Ready |
 | `v0.2.0` | Cross-encoder reranker + citation validator | Planned |
 | `v0.3.0` | Tauri desktop UI with PDF viewer + citation chips | Planned |
 | `v0.5.0` | Public eval harness + benchmarks | Planned |
