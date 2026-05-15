@@ -15,6 +15,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod author;
 pub mod dataset;
 pub mod fetch;
 pub mod inject;
@@ -22,6 +23,7 @@ pub mod lint;
 pub mod report;
 pub mod runner;
 
+pub use author::{render_for_pdf, render_template, AuthorError, AuthorOptions};
 pub use dataset::{load_dataset, Dataset, Example, HallucinationClass, SupportMutation};
 pub use fetch::{fetch_dailymed, FetchConfig, FetchError, HttpClient, Manifest, UreqClient};
 pub use inject::{
