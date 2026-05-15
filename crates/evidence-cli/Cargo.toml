@@ -1,0 +1,15 @@
+[package]
+name = "evidence-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Headless CLI for evidence."
+
+[[bin]]
+name = "evidence"
+path = "src/main.rs"
+
+[dependencies]
+evidence-core = { path = "../evidence-core" }
