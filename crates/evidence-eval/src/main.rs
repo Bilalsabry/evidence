@@ -25,9 +25,9 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
-    fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, render_for_pdf,
-    render_report, render_stats, run_with_mode, write_markdown, AuthorOptions, DatasetStats,
-    FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
+    fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, load_dataset_path,
+    render_for_pdf, render_report, render_stats, run_with_mode, write_markdown, AuthorOptions,
+    DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -42,7 +42,8 @@ struct Cli {
 enum Command {
     /// Run the validator harness on a labeled dataset.
     Run {
-        /// Path to a TOML eval dataset.
+        /// Path to a TOML eval dataset, or a directory of `*.toml`
+        /// datasets (merged in filename order into one report).
         dataset: PathBuf,
         /// Optional output path for the markdown report. Default: stdout.
         #[arg(long)]
@@ -220,7 +221,7 @@ fn run_command(
     output: Option<&std::path::Path>,
     real_nli: bool,
 ) -> Result<ExitCode> {
-    let dataset = load_dataset(dataset_path).context("loading dataset")?;
+    let dataset = load_dataset_path(dataset_path).context("loading dataset")?;
     let mode = if real_nli {
         SupportMode::RealNli
     } else {
