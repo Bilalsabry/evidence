@@ -32,7 +32,11 @@ use evidence_eval::{
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "evidence-eval", about = "Closed-Loop Citation eval harness")]
+#[command(
+    name = "evidence-eval",
+    version,
+    about = "Closed-Loop Citation eval harness"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
