@@ -2,7 +2,7 @@
 //! reads/writes for every table, and a single-connection check that FTS5
 //! and `vec0` are both live.
 
-use evidence_core::storage::{migrations, Storage};
+use evidence_core::storage::{migrations, SpanLocation, Storage};
 use rusqlite::params;
 
 fn fresh() -> Storage {
@@ -282,6 +282,111 @@ fn fts5_and_vec0_live_on_the_same_connection() {
         knn[0].1,
         knn[1].1
     );
+}
+
+#[test]
+fn document_source_path_roundtrips_and_handles_legacy_null() {
+    let storage = fresh();
+    let conn = storage.conn();
+    conn.execute(
+        "INSERT INTO documents (sha256, title, page_count, ingested_at, source_path) \
+         VALUES (?, ?, ?, ?, ?)",
+        params!["sha-a", "A", 1, 1_i64, "/abs/path/a.pdf"],
+    )
+    .unwrap();
+    // A legacy-style row written before migration 004 — column omitted, so NULL.
+    conn.execute(
+        "INSERT INTO documents (sha256, title, page_count, ingested_at) \
+         VALUES (?, ?, ?, ?)",
+        params!["sha-b", "B", 1, 2_i64],
+    )
+    .unwrap();
+
+    let with_path: i64 = conn
+        .query_row("SELECT id FROM documents WHERE sha256='sha-a'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let legacy: i64 = conn
+        .query_row("SELECT id FROM documents WHERE sha256='sha-b'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+
+    assert_eq!(
+        storage.document_source_path(with_path).unwrap(),
+        Some("/abs/path/a.pdf".to_string())
+    );
+    assert_eq!(storage.document_source_path(legacy).unwrap(), None);
+    // Non-existent document → None, not an error.
+    assert_eq!(storage.document_source_path(9999).unwrap(), None);
+}
+
+#[test]
+fn span_location_resolves_doc_page_and_bbox() {
+    let storage = fresh();
+    let conn = storage.conn();
+    conn.execute(
+        "INSERT INTO documents (sha256, title, page_count, ingested_at) VALUES ('s',NULL,1,0)",
+        [],
+    )
+    .unwrap();
+    let doc_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO pages (doc_id, page_num, raw_text) VALUES (?, 7, 'hello')",
+        params![doc_id],
+    )
+    .unwrap();
+    let page_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO spans (page_id, start_offset, end_offset, text, bbox_json) \
+         VALUES (?, 0, 5, 'hello', '{\"x0\":1.5,\"y0\":2.0,\"x1\":3.5,\"y1\":4.0}')",
+        params![page_id],
+    )
+    .unwrap();
+    let span_id = conn.last_insert_rowid();
+
+    let loc = storage.span_location(span_id).unwrap().expect("found");
+    assert_eq!(
+        loc,
+        SpanLocation {
+            doc_id,
+            page_num: 7,
+            bbox: evidence_core::ingest::pdf::Bbox {
+                x0: 1.5,
+                y0: 2.0,
+                x1: 3.5,
+                y1: 4.0,
+            },
+        }
+    );
+    assert_eq!(storage.span_location(424242).unwrap(), None);
+}
+
+#[test]
+fn span_location_surfaces_corrupt_bbox_json() {
+    let storage = fresh();
+    let conn = storage.conn();
+    conn.execute(
+        "INSERT INTO documents (sha256,title,page_count,ingested_at) VALUES ('s',NULL,1,0)",
+        [],
+    )
+    .unwrap();
+    let doc_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO pages (doc_id, page_num, raw_text) VALUES (?, 1, '')",
+        params![doc_id],
+    )
+    .unwrap();
+    let page_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO spans (page_id, start_offset, end_offset, text, bbox_json) \
+         VALUES (?, 0, 1, 'x', 'not-json')",
+        params![page_id],
+    )
+    .unwrap();
+    let span_id = conn.last_insert_rowid();
+    assert!(storage.span_location(span_id).is_err());
 }
 
 fn vec_to_json(v: &[f32]) -> String {

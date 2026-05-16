@@ -6,9 +6,26 @@
 
 use std::io::Write;
 
+use evidence_core::ingest::ingest_pdf;
 use evidence_core::ingest::pdf::{self, PdfError};
+use evidence_core::retrieval::{EmbedError, Embedder, BGE_SMALL_DIM};
+use evidence_core::storage::Storage;
 use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref, Str};
 use tempfile::NamedTempFile;
+
+/// Deterministic embedder: every chunk maps to the same fixed vector.
+/// Retrieval quality is irrelevant here — these tests exercise the
+/// persistence path (source_path + span rows), not search. The vec0
+/// column is fixed at `BGE_SMALL_DIM`, so the mock must match it.
+struct ConstEmbedder;
+impl Embedder for ConstEmbedder {
+    fn dim(&self) -> usize {
+        BGE_SMALL_DIM
+    }
+    fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+        Ok(texts.iter().map(|_| vec![0.1; BGE_SMALL_DIM]).collect())
+    }
+}
 
 const PAGE_TEXTS: [&str; 3] = [
     "Evidence page one heading.",
@@ -111,6 +128,45 @@ fn spans_partition_raw_text() {
                 &page.raw_text[span.start_offset..span.end_offset]
             );
         }
+    }
+}
+
+#[test]
+fn ingest_records_source_path_and_resolvable_spans() {
+    let file = write_to_tempfile(&build_sample_pdf());
+    let mut storage = Storage::open_in_memory().expect("storage");
+    let summary = ingest_pdf(&mut storage, &ConstEmbedder, file.path(), Some("Sample"))
+        .expect("ingest should succeed");
+
+    // source_path is the canonicalized absolute path of the ingested file.
+    let recorded = storage
+        .document_source_path(summary.document_id)
+        .expect("query source_path")
+        .expect("source_path was recorded");
+    let expected = std::fs::canonicalize(file.path())
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(recorded, expected);
+
+    // Every span on every page resolves to this document with a sane
+    // 1-indexed page number and a non-degenerate bbox.
+    let span_ids: Vec<i64> = storage
+        .conn()
+        .prepare("SELECT id FROM spans ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(!span_ids.is_empty(), "fixture produced spans");
+    for sid in span_ids {
+        let loc = storage
+            .span_location(sid)
+            .expect("query")
+            .expect("span resolves");
+        assert_eq!(loc.doc_id, summary.document_id);
+        assert!((1..=3).contains(&loc.page_num), "page in 1..=3");
     }
 }
 
