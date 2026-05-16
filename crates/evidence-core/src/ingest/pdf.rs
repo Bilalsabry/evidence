@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use pdfium_render::prelude::{PdfRect, Pdfium, PdfiumError};
+use pdfium_render::prelude::{PdfPageText, PdfRect, Pdfium, PdfiumError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -97,23 +97,7 @@ pub fn extract<P: AsRef<Path>>(path: P) -> Result<Vec<Page>, PdfError> {
             message: e.to_string(),
         })?;
 
-        let mut raw_text = String::new();
-        let mut spans = Vec::new();
-        for segment in page_text.segments().iter() {
-            let text = segment.text();
-            if text.is_empty() {
-                continue;
-            }
-            let start_offset = raw_text.len();
-            raw_text.push_str(&text);
-            let end_offset = raw_text.len();
-            spans.push(Span {
-                start_offset,
-                end_offset,
-                text,
-                bbox: bbox_from(&segment.bounds()),
-            });
-        }
+        let (raw_text, spans) = group_chars_into_lines(&page_text);
 
         out.push(Page {
             page_num,
@@ -132,6 +116,101 @@ fn bbox_from(rect: &PdfRect) -> Bbox {
         x1: rect.right().value,
         y1: rect.top().value,
     }
+}
+
+/// Smallest box covering both inputs.
+fn union_bbox(a: Bbox, b: Bbox) -> Bbox {
+    Bbox {
+        x0: a.x0.min(b.x0),
+        y0: a.y0.min(b.y0),
+        x1: a.x1.max(b.x1),
+        y1: a.y1.max(b.y1),
+    }
+}
+
+/// Group a page's characters into **line-level** spans.
+///
+/// PDFium's `segments()` API is glyph-level on many real-world PDFs
+/// (one segment per character), which is the wrong granularity for
+/// citation: a citation should resolve to a readable run of text, not a
+/// single letter. We rebuild lines from the character stream instead.
+///
+/// A line ends when we hit an explicit newline, or — for PDFs that
+/// encode no newline characters — when a glyph's vertical band stops
+/// overlapping the current line's band (a baseline jump). Each emitted
+/// span's text is exactly the slice of `raw_text` it covers, so spans
+/// still partition `raw_text` contiguously (the invariant ingest and
+/// the citation resolver rely on).
+fn group_chars_into_lines(page_text: &PdfPageText) -> (String, Vec<Span>) {
+    let mut raw_text = String::new();
+    let mut spans = Vec::new();
+
+    let mut line_text = String::new();
+    let mut line_bbox: Option<Bbox> = None;
+
+    // `raw_text` already contains the current line's chars, so the line
+    // occupies its trailing `line_text.len()` bytes. Deriving offsets
+    // from that keeps spans partitioning `raw_text` with no separate
+    // cursor to keep in sync.
+    macro_rules! flush_line {
+        () => {
+            if !line_text.is_empty() {
+                let end = raw_text.len();
+                let start = end - line_text.len();
+                spans.push(Span {
+                    start_offset: start,
+                    end_offset: end,
+                    text: std::mem::take(&mut line_text),
+                    // A line with no glyph bounds (e.g. whitespace only)
+                    // gets a zero box rather than being dropped — the
+                    // partition invariant matters more than its bbox.
+                    bbox: line_bbox.take().unwrap_or(Bbox {
+                        x0: 0.0,
+                        y0: 0.0,
+                        x1: 0.0,
+                        y1: 0.0,
+                    }),
+                });
+            }
+        };
+    }
+
+    let chars = page_text.chars();
+    for ch in chars.iter() {
+        let Some(c) = ch.unicode_char() else {
+            continue;
+        };
+        let glyph_bbox = ch.loose_bounds().ok().map(|r| bbox_from(&r));
+
+        // Baseline-jump detection for PDFs with no explicit newlines:
+        // if this glyph's vertical band doesn't overlap the line's, the
+        // line is over. Skip the check for the newline char itself and
+        // for boundless glyphs (whitespace).
+        if c != '\n' && c != '\r' {
+            if let (Some(g), Some(l)) = (glyph_bbox, line_bbox) {
+                let overlaps = g.y0 <= l.y1 && g.y1 >= l.y0;
+                if !overlaps && !line_text.is_empty() {
+                    // Keep lines readable when joined downstream.
+                    line_text.push('\n');
+                    raw_text.push('\n');
+                    flush_line!();
+                }
+            }
+        }
+
+        line_text.push(c);
+        raw_text.push(c);
+        if let Some(g) = glyph_bbox {
+            line_bbox = Some(line_bbox.map_or(g, |acc| union_bbox(acc, g)));
+        }
+
+        if c == '\n' {
+            flush_line!();
+        }
+    }
+    flush_line!();
+
+    (raw_text, spans)
 }
 
 fn map_pdfium_err(err: PdfiumError) -> PdfError {
