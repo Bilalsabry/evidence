@@ -118,6 +118,46 @@ pub fn load_dataset<P: AsRef<Path>>(path: P) -> anyhow::Result<Dataset> {
     Ok(dataset)
 }
 
+/// Load a dataset from either a single TOML file or a directory of them.
+///
+/// For a directory, every `*.toml` entry (non-recursive) is parsed in
+/// lexicographic filename order and their examples are concatenated into
+/// one [`Dataset`]. Order is deterministic so reports diff cleanly. This
+/// is what lets the 300-example benchmark live as many small files —
+/// e.g. one per drug label — while `run` still emits a single matrix.
+///
+/// # Errors
+///
+/// Returns an error if `path` doesn't exist, a directory contains no
+/// `.toml` files, or any file fails to parse (the error names the file).
+pub fn load_dataset_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Dataset> {
+    use anyhow::Context as _;
+
+    let path = path.as_ref();
+    if !path.is_dir() {
+        return load_dataset(path).with_context(|| format!("parsing dataset {}", path.display()));
+    }
+
+    let mut toml_files: Vec<std::path::PathBuf> = std::fs::read_dir(path)
+        .with_context(|| format!("reading directory {}", path.display()))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("toml"))
+        .collect();
+    toml_files.sort();
+
+    if toml_files.is_empty() {
+        anyhow::bail!("no .toml files in directory {}", path.display());
+    }
+
+    let mut examples = Vec::new();
+    for file in &toml_files {
+        let ds =
+            load_dataset(file).with_context(|| format!("parsing dataset {}", file.display()))?;
+        examples.extend(ds.examples);
+    }
+    Ok(Dataset { examples })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +187,56 @@ response_sentences = [
         assert_eq!(ex.corpus_spans[0].id, 10);
         assert_eq!(ex.prompt_chunks[0].span_range, [10, 10]);
         assert_eq!(ex.response_sentences[0].cited_spans, vec![10]);
+    }
+
+    fn write_example(dir: &std::path::Path, file: &str, name: &str) {
+        let body = format!(
+            r#"
+[[example]]
+name = "{name}"
+class = "valid"
+corpus_spans = [{{ id = 10, page = 1, text = "x" }}]
+prompt_chunks = [{{ id = 1, span_range = [10, 10], text = "x" }}]
+response_sentences = [{{ text = "x", cited_spans = [10] }}]
+"#
+        );
+        std::fs::write(dir.join(file), body).unwrap();
+    }
+
+    #[test]
+    fn load_path_reads_single_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("one.toml");
+        write_example(dir.path(), "one.toml", "solo");
+        let ds = load_dataset_path(&f).unwrap();
+        assert_eq!(ds.examples.len(), 1);
+        assert_eq!(ds.examples[0].name, "solo");
+    }
+
+    #[test]
+    fn load_path_merges_directory_in_filename_order() {
+        let dir = tempfile::tempdir().unwrap();
+        // Intentionally create out of order; loader must sort by name.
+        write_example(dir.path(), "b.toml", "second");
+        write_example(dir.path(), "a.toml", "first");
+        std::fs::write(dir.path().join("notes.md"), "ignored").unwrap();
+        let ds = load_dataset_path(dir.path()).unwrap();
+        let names: Vec<_> = ds.examples.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn load_path_empty_directory_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = load_dataset_path(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("no .toml files"));
+    }
+
+    #[test]
+    fn load_path_names_the_failing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bad.toml"), "this = is not [valid").unwrap();
+        let err = load_dataset_path(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("bad.toml"));
     }
 }

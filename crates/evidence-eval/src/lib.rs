@@ -25,7 +25,9 @@ pub mod runner;
 pub mod stats;
 
 pub use author::{render_for_pdf, render_template, AuthorError, AuthorOptions};
-pub use dataset::{load_dataset, Dataset, Example, HallucinationClass, SupportMutation};
+pub use dataset::{
+    load_dataset, load_dataset_path, Dataset, Example, HallucinationClass, SupportMutation,
+};
 pub use fetch::{fetch_dailymed, FetchConfig, FetchError, HttpClient, Manifest, UreqClient};
 pub use inject::{
     inject_all_variants, inject_existence, inject_in_context, inject_support, InjectionConfig,

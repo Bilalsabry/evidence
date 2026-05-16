@@ -27,5 +27,12 @@ thiserror = "2"
 toml = "0.8"
 ureq = { version = "2", default-features = false, features = ["json", "tls"] }
 
+[features]
+# Opt-in smoke test that exercises the real NLI cross-encoder
+# (`SupportMode::RealNli`). Off by default so `cargo test` stays fast and
+# offline; CI runs it on its own job with the HF model cache warmed. The
+# test `#[cfg]`-gates itself on this feature.
+real-nli-smoke = []
+
 [dev-dependencies]
 tempfile = "3"

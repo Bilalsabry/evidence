@@ -73,3 +73,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p evidence-cli --features ollama-integration-tests --test ollama_integration
+
+  # Exercises the real NLI cross-encoder path (`evidence-eval run
+  # --real-nli`). Regression guard for model-loading / wiring breakage,
+  # not an accuracy benchmark — see tests/real_nli_smoke.rs. Kept off the
+  # default `test` job so a flaky model download can't block unrelated
+  # PRs; this job owns that risk explicitly.
+  test-real-nli:
+    name: test-real-nli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Same HF model cache as the `test` job. Bump the `-v<n>` suffix in
+      # lockstep with that key when the NLI model changes.
+      - name: Cache ONNX models
+        uses: actions/cache@v4
+        with:
+          path: |
+            .fastembed_cache
+            ~/.cache/fastembed
+            ~/.cache/huggingface
+          key: onnx-bge-small-v1.5+reranker-base+distilbert-mnli-v3
+      - run: cargo test -p evidence-eval --features real-nli-smoke --test real_nli_smoke
