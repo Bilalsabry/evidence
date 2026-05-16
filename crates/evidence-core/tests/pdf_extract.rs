@@ -132,6 +132,43 @@ fn spans_partition_raw_text() {
 }
 
 #[test]
+fn spans_are_line_level_not_per_character() {
+    // Regression: PDFium's segments() API is glyph-level on many real
+    // PDFs, which produced one span per character and made the citation
+    // author tool unusable. Each fixture page is a single line of
+    // multi-word text — it must come back as a small number of spans,
+    // each a readable run, not a pile of one-character spans.
+    let file = write_to_tempfile(&build_sample_pdf());
+    let pages = pdf::extract(file.path()).expect("extract should succeed");
+
+    for page in &pages {
+        let char_count = page.raw_text.chars().count();
+        assert!(
+            page.spans.len() * 4 < char_count.max(4),
+            "page {} has {} spans for {} chars — looks per-character",
+            page.page_num,
+            page.spans.len(),
+            char_count,
+        );
+        // The page's text is a multi-word sentence; the line span must
+        // carry the words together, including the spaces between them.
+        let joined: String = page.spans.iter().map(|s| s.text.as_str()).collect();
+        assert!(
+            joined.contains(' '),
+            "page {} spans never contain a space — words were split",
+            page.page_num,
+        );
+        assert!(
+            page.spans
+                .iter()
+                .any(|s| s.text.trim().split(' ').count() >= 2),
+            "page {} has no multi-word span",
+            page.page_num,
+        );
+    }
+}
+
+#[test]
 fn ingest_records_source_path_and_resolvable_spans() {
     let file = write_to_tempfile(&build_sample_pdf());
     let mut storage = Storage::open_in_memory().expect("storage");
