@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { PdfViewer, type PdfViewerHandle } from "./PdfViewer";
+import { ChatPanel } from "./ChatPanel";
 import type { DocumentInfo } from "./types";
 
 type IngestProgressEvent = {
@@ -27,7 +29,6 @@ export function App() {
   const [ingestError, setIngestError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [openDocId, setOpenDocId] = useState<number | null>(null);
-  const [spanIdInput, setSpanIdInput] = useState("");
   const viewerRef = useRef<PdfViewerHandle | null>(null);
 
   const openInViewer = useCallback((docId: number) => {
@@ -35,12 +36,17 @@ export function App() {
     void viewerRef.current?.openDocument(docId);
   }, []);
 
-  const highlightById = useCallback(() => {
-    const id = Number(spanIdInput.trim());
-    if (Number.isFinite(id) && id > 0) {
-      void viewerRef.current?.highlightSpan(id);
-    }
-  }, [spanIdInput]);
+  // A citation chip was clicked: jump the viewer to that span. The
+  // viewer switches documents on its own if the span lives elsewhere.
+  const onCiteClick = useCallback((spanId: number) => {
+    void viewerRef.current?.highlightSpan(spanId);
+  }, []);
+
+  const refreshLibrary = useCallback(() => {
+    invoke<DocumentInfo[]>("list_documents")
+      .then(setDocuments)
+      .catch((e) => setIngestError(String(e)));
+  }, []);
 
   // Smoke ping + initial library load.
   useEffect(() => {
@@ -48,7 +54,7 @@ export function App() {
       .then(setVersion)
       .catch((e) => setIngestError(String(e)));
     refreshLibrary();
-  }, []);
+  }, [refreshLibrary]);
 
   // Listen for ingest progress events for the lifetime of the component.
   useEffect(() => {
@@ -58,12 +64,6 @@ export function App() {
     return () => {
       promise.then((unlisten) => unlisten());
     };
-  }, []);
-
-  const refreshLibrary = useCallback(() => {
-    invoke<DocumentInfo[]>("list_documents")
-      .then(setDocuments)
-      .catch((e) => setIngestError(String(e)));
   }, []);
 
   const pickAndIngest = useCallback(async () => {
@@ -100,98 +100,84 @@ export function App() {
   return (
     <main className="app-shell">
       <header className="app-header">
-        <h1>evidence</h1>
-        <p className="tagline">
-          {version ? `core v${version} — auditable AI for high-stakes work` : "loading…"}
-        </p>
+        <div>
+          <h1>evidence</h1>
+          <p className="tagline">
+            {version
+              ? `core v${version} — auditable AI for high-stakes work`
+              : "loading…"}
+          </p>
+        </div>
+        <div className="header-actions">
+          <button onClick={pickAndIngest} disabled={busy} className="primary">
+            {busy ? "Ingesting…" : "Ingest a PDF"}
+          </button>
+        </div>
       </header>
 
-      <section className="actions">
-        <button onClick={pickAndIngest} disabled={busy} className="primary">
-          {busy ? "Ingesting…" : "Ingest a PDF"}
-        </button>
-        {progress && (
-          <ProgressBar progress={progress} />
-        )}
-        {ingestError && (
-          <p className="err" role="alert">
-            {ingestError}
-          </p>
-        )}
-      </section>
+      {(progress || ingestError) && (
+        <section className="actions">
+          {progress && <ProgressBar progress={progress} />}
+          {ingestError && (
+            <p className="err" role="alert">
+              {ingestError}
+            </p>
+          )}
+        </section>
+      )}
 
-      <section className="library">
-        <h2>Library</h2>
-        {documents.length === 0 ? (
-          <p className="empty">Nothing here yet. Ingest a PDF to get started.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Pages</th>
-                <th>Ingested</th>
-              </tr>
-            </thead>
-            <tbody>
+      <PanelGroup direction="horizontal" className="three-pane">
+        <Panel defaultSize={22} minSize={14} className="pane library-pane">
+          <h2>Library</h2>
+          {documents.length === 0 ? (
+            <p className="empty">
+              Nothing here yet. Ingest a PDF to get started.
+            </p>
+          ) : (
+            <ul className="doc-list">
               {documents.map((d) => (
-                <tr
-                  key={d.id}
-                  className={d.id === openDocId ? "row-open" : "row"}
-                  onClick={() => openInViewer(d.id)}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`Open ${d.title ?? d.sha256.slice(0, 12)} in viewer`}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      openInViewer(d.id);
+                <li key={d.id}>
+                  <button
+                    className={
+                      d.id === openDocId ? "doc-item open" : "doc-item"
                     }
-                  }}
-                >
-                  <td>{d.title ?? d.sha256.slice(0, 12)}</td>
-                  <td>{d.page_count}</td>
-                  <td>{new Date(d.ingested_at).toLocaleString()}</td>
-                </tr>
+                    onClick={() => openInViewer(d.id)}
+                    aria-label={`Open ${
+                      d.title ?? d.sha256.slice(0, 12)
+                    } in viewer`}
+                  >
+                    <span className="doc-title">
+                      {d.title ?? d.sha256.slice(0, 12)}
+                    </span>
+                    <span className="doc-meta">{d.page_count} pp</span>
+                  </button>
+                </li>
               ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+            </ul>
+          )}
+        </Panel>
 
-      <section className="viewer-pane">
-        <div className="viewer-toolbar">
-          <h2>Viewer</h2>
-          {/* Temporary span-jump control. The chat panel (#20) replaces
-              this with clickable citation chips. */}
-          <div className="span-jump">
-            <input
-              type="number"
-              min={1}
-              placeholder="span id"
-              value={spanIdInput}
-              onChange={(e) => setSpanIdInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && highlightById()}
-              aria-label="Span id to highlight"
-            />
-            <button onClick={highlightById} disabled={!openDocId}>
-              Highlight span
-            </button>
-          </div>
-        </div>
-        <PdfViewer ref={viewerRef} />
-      </section>
+        <PanelResizeHandle className="resize-handle" />
 
-      <footer className="hint">
-        Chat panel with clickable citation chips lands in #20.
-      </footer>
+        <Panel defaultSize={50} minSize={25} className="pane viewer-pane">
+          <PdfViewer ref={viewerRef} />
+        </Panel>
+
+        <PanelResizeHandle className="resize-handle" />
+
+        <Panel defaultSize={28} minSize={18} className="pane chat-pane">
+          <ChatPanel onCiteClick={onCiteClick} />
+        </Panel>
+      </PanelGroup>
     </main>
   );
 }
 
 function ProgressBar({ progress }: { progress: IngestProgressEvent }) {
   const pct =
-    progress.total === 0 ? 0 : Math.round((progress.current / progress.total) * 100);
+    progress.total === 0
+      ? 0
+      : Math.round((progress.current / progress.total) * 100);
   return (
     <div className="progress" role="progressbar" aria-valuenow={pct}>
       <span className="progress-label">
