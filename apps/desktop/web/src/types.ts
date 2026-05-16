@@ -24,3 +24,22 @@ export type SpanLocation = {
   page_num: number;
   bbox: Bbox;
 };
+
+// Mirrors `evidence_core::query::Citation`.
+export type Citation = {
+  span_id: number;
+  doc_id: number;
+  page_num: number;
+  start_offset: number;
+  end_offset: number;
+};
+
+// Mirrors `evidence_core::query::{Sentence, Answer}`.
+export type Sentence = {
+  text: string;
+  citations: Citation[];
+};
+
+export type Answer = {
+  sentences: Sentence[];
+};
