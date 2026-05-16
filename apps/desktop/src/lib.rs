@@ -20,7 +20,7 @@ use evidence_core::ingest::{
 };
 use evidence_core::query::{answer_query, Answer, RerankerSupportChecker, SupportChecker};
 use evidence_core::retrieval::{BgeReranker, BgeSmall};
-use evidence_core::storage::{DocumentInfo, Storage};
+use evidence_core::storage::{DocumentInfo, SpanLocation, Storage};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -168,6 +168,43 @@ fn list_documents(state: tauri::State<AppState>) -> Result<Vec<DocumentInfo>, St
     storage.list_documents(200, 0).map_err(|e| e.to_string())
 }
 
+/// Original PDF bytes for a stored document, re-read from the path
+/// recorded at ingest time. Errors if the document is unknown, predates
+/// the `source_path` migration, or the file has since moved/been deleted
+/// — the frontend renders each as a "source unavailable" state rather
+/// than crashing the viewer.
+///
+/// v0.3 ships the bytes over IPC (JSON array). Fine for typical drug
+/// labels; a content-addressed store + streaming is a tracked follow-up.
+#[tauri::command]
+fn document_bytes(state: tauri::State<AppState>, doc_id: i64) -> Result<Vec<u8>, String> {
+    let storage = state
+        .storage
+        .lock()
+        .map_err(|e| format!("storage mutex poisoned: {e}"))?;
+    let path = storage
+        .document_source_path(doc_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            format!("no recorded source path for document {doc_id} (ingested before v0.3?)")
+        })?;
+    std::fs::read(&path).map_err(|e| format!("reading {path}: {e}"))
+}
+
+/// Resolve a cited span to its document, page, and bounding box so the
+/// viewer can scroll to and highlight it. Errors if no span has that id.
+#[tauri::command]
+fn span_location(state: tauri::State<AppState>, span_id: i64) -> Result<SpanLocation, String> {
+    let storage = state
+        .storage
+        .lock()
+        .map_err(|e| format!("storage mutex poisoned: {e}"))?;
+    storage
+        .span_location(span_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no span with id {span_id}"))
+}
+
 #[tauri::command]
 fn query(
     state: tauri::State<AppState>,
@@ -228,6 +265,8 @@ pub fn run() {
             ingest,
             ingest_with_progress,
             list_documents,
+            document_bytes,
+            span_location,
             query
         ])
         .run(tauri::generate_context!())

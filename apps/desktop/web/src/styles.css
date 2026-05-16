@@ -4,6 +4,94 @@
     Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  /* Citation highlight. One-line theming hook (issue #19). */
+  --highlight-color: #ffd54a;
+  --highlight-opacity: 0.38;
+}
+
+.viewer-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+  border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
+}
+
+.viewer-toolbar h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.span-jump {
+  display: flex;
+  gap: 6px;
+}
+
+.span-jump input {
+  width: 90px;
+}
+
+.pdf-viewer {
+  flex: 1;
+  overflow: auto;
+  background: color-mix(in srgb, CanvasText 6%, Canvas);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.pdf-status {
+  opacity: 0.7;
+  margin: 24px;
+}
+
+.pdf-status.err {
+  color: #c0392b;
+  opacity: 1;
+}
+
+.pdf-page {
+  position: relative;
+  background: white;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+  flex: none;
+}
+
+.pdf-page canvas {
+  display: block;
+}
+
+.pdf-highlight {
+  position: absolute;
+  background: var(--highlight-color);
+  opacity: var(--highlight-opacity);
+  pointer-events: none;
+  border-radius: 2px;
+  transition: opacity 0.15s ease-in;
+}
+
+.library tr.row,
+.library tr.row-open {
+  cursor: pointer;
+}
+
+.library tr.row-open {
+  background: color-mix(in srgb, CanvasText 8%, transparent);
+}
+
+.library tr.row:hover {
+  background: color-mix(in srgb, CanvasText 5%, transparent);
 }
 
 body {

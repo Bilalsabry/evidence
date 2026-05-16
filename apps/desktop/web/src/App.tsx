@@ -1,15 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-
-type DocumentInfo = {
-  id: number;
-  sha256: string;
-  title: string | null;
-  page_count: number;
-  ingested_at: number;
-};
+import { PdfViewer, type PdfViewerHandle } from "./PdfViewer";
+import type { DocumentInfo } from "./types";
 
 type IngestProgressEvent = {
   ingest_id: number;
@@ -32,6 +26,21 @@ export function App() {
   const [progress, setProgress] = useState<IngestProgressEvent | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [openDocId, setOpenDocId] = useState<number | null>(null);
+  const [spanIdInput, setSpanIdInput] = useState("");
+  const viewerRef = useRef<PdfViewerHandle | null>(null);
+
+  const openInViewer = useCallback((docId: number) => {
+    setOpenDocId(docId);
+    void viewerRef.current?.openDocument(docId);
+  }, []);
+
+  const highlightById = useCallback(() => {
+    const id = Number(spanIdInput.trim());
+    if (Number.isFinite(id) && id > 0) {
+      void viewerRef.current?.highlightSpan(id);
+    }
+  }, [spanIdInput]);
 
   // Smoke ping + initial library load.
   useEffect(() => {
@@ -126,7 +135,20 @@ export function App() {
             </thead>
             <tbody>
               {documents.map((d) => (
-                <tr key={d.id}>
+                <tr
+                  key={d.id}
+                  className={d.id === openDocId ? "row-open" : "row"}
+                  onClick={() => openInViewer(d.id)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open ${d.title ?? d.sha256.slice(0, 12)} in viewer`}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openInViewer(d.id);
+                    }
+                  }}
+                >
                   <td>{d.title ?? d.sha256.slice(0, 12)}</td>
                   <td>{d.page_count}</td>
                   <td>{new Date(d.ingested_at).toLocaleString()}</td>
@@ -137,8 +159,31 @@ export function App() {
         )}
       </section>
 
+      <section className="viewer-pane">
+        <div className="viewer-toolbar">
+          <h2>Viewer</h2>
+          {/* Temporary span-jump control. The chat panel (#20) replaces
+              this with clickable citation chips. */}
+          <div className="span-jump">
+            <input
+              type="number"
+              min={1}
+              placeholder="span id"
+              value={spanIdInput}
+              onChange={(e) => setSpanIdInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && highlightById()}
+              aria-label="Span id to highlight"
+            />
+            <button onClick={highlightById} disabled={!openDocId}>
+              Highlight span
+            </button>
+          </div>
+        </div>
+        <PdfViewer ref={viewerRef} />
+      </section>
+
       <footer className="hint">
-        PDF viewer + chat panel land in #19 and #20.
+        Chat panel with clickable citation chips lands in #20.
       </footer>
     </main>
   );
