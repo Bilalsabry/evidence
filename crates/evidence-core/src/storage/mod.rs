@@ -14,7 +14,7 @@
 
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -119,6 +119,67 @@ impl Storage {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    /// The absolute filesystem path a document was ingested from, if
+    /// recorded. `Ok(None)` means either the document doesn't exist or it
+    /// predates migration 004 (which added the column). The desktop PDF
+    /// viewer uses this to re-read the original bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Sqlite`] for query failures.
+    pub fn document_source_path(&self, doc_id: i64) -> Result<Option<String>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT source_path FROM documents WHERE id = ?")?;
+        let path = stmt
+            .query_row([doc_id], |row| row.get::<_, Option<String>>(0))
+            .optional()?
+            .flatten();
+        Ok(path)
+    }
+
+    /// Resolve a span to its document, 1-indexed page number, and
+    /// bounding box (PDF points, origin bottom-left). `Ok(None)` if no
+    /// span has that id. The desktop viewer uses this to scroll to and
+    /// highlight a cited span.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Sqlite`] for query failures or if
+    /// `bbox_json` is not valid `{x0,y0,x1,y1}` JSON (a corrupt index;
+    /// surfaced rather than silently dropped).
+    pub fn span_location(&self, span_id: i64) -> Result<Option<SpanLocation>, StorageError> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT p.doc_id, p.page_num, s.bbox_json \
+             FROM spans s JOIN pages p ON p.id = s.page_id \
+             WHERE s.id = ?",
+        )?;
+        let row = stmt
+            .query_row([span_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .optional()?;
+        let Some((doc_id, page_num, bbox_json)) = row else {
+            return Ok(None);
+        };
+        let bbox: crate::ingest::pdf::Bbox = serde_json::from_str(&bbox_json).map_err(|e| {
+            StorageError::Sqlite(rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            ))
+        })?;
+        Ok(Some(SpanLocation {
+            doc_id,
+            page_num,
+            bbox,
+        }))
+    }
 }
 
 /// Lightweight summary of a row in `documents`. Returned by
@@ -131,4 +192,15 @@ pub struct DocumentInfo {
     pub title: Option<String>,
     pub page_count: i64,
     pub ingested_at: i64,
+}
+
+/// Where a span lives: which document, which page, and the bounding box
+/// (PDF points, origin bottom-left) the desktop viewer overlays a
+/// highlight on. Returned by [`Storage::span_location`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpanLocation {
+    pub doc_id: i64,
+    /// 1-indexed page number.
+    pub page_num: i64,
+    pub bbox: crate::ingest::pdf::Bbox,
 }

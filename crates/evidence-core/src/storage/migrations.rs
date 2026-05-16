@@ -13,6 +13,7 @@ const MIGRATIONS: &[(i32, &str)] = &[
     (1, include_str!("migrations/001_initial.sql")),
     (2, include_str!("migrations/002_chunks_indexes.sql")),
     (3, include_str!("migrations/003_chunks_fts_triggers.sql")),
+    (4, include_str!("migrations/004_documents_source_path.sql")),
 ];
 
 /// Apply every migration newer than the connection's current `user_version`.

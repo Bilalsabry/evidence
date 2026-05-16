@@ -152,12 +152,21 @@ pub fn ingest_pdf_with_progress<P: AsRef<Path>>(
     )
     .unwrap_or(i64::MAX);
 
+    // Absolute path so the desktop viewer can re-read the original bytes
+    // even if the app's CWD differs from ingest time. Falls back to the
+    // path as given if canonicalization fails (e.g. odd FS) — a best
+    // effort; the viewer degrades gracefully on a missing file.
+    let source_path = std::fs::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+
     let tx = storage.conn_mut().transaction()?;
     let doc_id = {
         tx.execute(
-            "INSERT INTO documents (sha256, title, page_count, ingested_at) \
-             VALUES (?, ?, ?, ?)",
-            params![&sha, title, pages.len() as i64, now_ms],
+            "INSERT INTO documents (sha256, title, page_count, ingested_at, source_path) \
+             VALUES (?, ?, ?, ?, ?)",
+            params![&sha, title, pages.len() as i64, now_ms, &source_path],
         )?;
         tx.last_insert_rowid()
     };
