@@ -98,7 +98,7 @@ The synthetic-failure approach is defensible because each failure is generated b
 
 **Subsection 5.7: Cost analysis.** Latency per rule. Cumulative validator overhead vs. retrieval. (Industry readers care.)
 
-**Draws from:** experiments to be run Weeks 6–8. Each subsection currently has placeholder numbers; replace with real measurements before publication.
+**Draws from:** experiments to be run Weeks 6–8. Each subsection currently has placeholder numbers; replace with real measurements before publication. [`preliminary-results.md`](preliminary-results.md) already de-risks §5.2/§5.3 on the bootstrap set: the catch matrix is exactly diagonal (kernel holds end-to-end), and the real-NLI run shows the support gate's failure mode is false-refusal-on-valid, not missed-failures — motivating the DeBERTa-v3-large upgrade in §5.1.
 
 ---
 

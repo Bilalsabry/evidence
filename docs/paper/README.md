@@ -14,6 +14,7 @@ This directory is the paper's planning layer. The code that backs the paper's cl
 | [`OUTLINE.md`](OUTLINE.md) | Section-by-section sketch of the workshop paper. ~8 pages, ACL short format. | Throughout. Fill in as experiments land. |
 | [`prior-art-reading.md`](prior-art-reading.md) | One-paragraph notes per cited paper. The reading list and template. | Week 1, in parallel with the strategic plan's reads. |
 | [`related-work-table.md`](related-work-table.md) | Matrix: each prior paper × each of the three rules, marking what they measure and what they conflate. The "we earned this paragraph" evidence. | Filled in after the reads. |
+| [`preliminary-results.md`](preliminary-results.md) | Bootstrap-set run of the full harness. De-risks §5.2/§5.3: catch matrix is exactly diagonal; real-NLI failure mode is false-refusal-on-valid. Regenerates from documented commands. | Replace with full-benchmark numbers before submission. |
 
 ## Tie-points to the codebase
 
