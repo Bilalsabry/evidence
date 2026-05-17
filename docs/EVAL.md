@@ -149,22 +149,36 @@ Both failure modes are real cases the paper will note as **open work**:
 
 `--nli-model <hf-repo>` substitutes a different MNLI checkpoint for the
 default distilbert, on the *same* labeled set — this is the §5.1
-model-comparison the false-refusal finding motivates. The repo must
-expose `onnx/model.onnx`, `tokenizer.json`, and a `config.json` whose
-`id2label` is an MNLI permutation. Example:
+model-comparison the false-refusal finding motivates. The repo needs
+ONNX weights (the loader probes `onnx/model.onnx`, `model.onnx`,
+`onnx/model_quantized.onnx`, `model_quantized.onnx` in that order), a
+`tokenizer.json` (SentencePiece-only DeBERTa repos that ship just
+`spm.model` will *not* work), and a `config.json` with an MNLI
+`id2label`.
+
+**Verified known-good candidate:**
+`lquint/DeBERTa-v3-base-mnli-fever-anli-onnx` — an ONNX export of
+MoritzLaurer's DeBERTa-v3-base-mnli-fever-anli (a strong NLI model).
+Full-precision `model.onnx` at the repo root, ships `tokenizer.json`.
 
 ```sh
 # One command: runs both models, emits the §5.1 table directly
 # (per-class three-gate agreement + delta; valid-retention headline).
 evidence-eval compare /tmp/inj.toml \
-    --candidate-nli <org/deberta-v3-large-mnli-onnx> \
+    --candidate-nli lquint/DeBERTa-v3-base-mnli-fever-anli-onnx \
     --output docs/paper/nli-comparison.md
 
 # Or drive the two runs by hand if you want the full per-example detail:
 evidence-eval run /tmp/inj.toml --real-nli
 evidence-eval run /tmp/inj.toml --real-nli \
-    --nli-model <org/deberta-v3-large-mnli-onnx>
+    --nli-model lquint/DeBERTa-v3-base-mnli-fever-anli-onnx
 ```
+
+Most DeBERTa MNLI ONNX repos put the model at `model.onnx` (repo root),
+not the Xenova `onnx/model.onnx` layout — the loader's path probe
+handles this, so a good repo works first try instead of 404-ing on a
+layout assumption. If a repo genuinely has no ONNX weights or no
+`tokenizer.json`, the error names exactly what is missing.
 
 The expectation: the structural rows are unchanged (the gate ordering
 is model-independent); only the `valid`/`three_gate` false-refusals
