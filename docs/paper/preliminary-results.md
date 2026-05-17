@@ -111,6 +111,53 @@ on the full benchmark.
 
 ---
 
+## Result 3 — first real DailyMed label (end-to-end)
+
+First hand-authored example off the fetched corpus: a single-span
+quantitative claim from an OTC sunscreen label (Hampton Sun SPF30,
+active-ingredient concentration). One `valid` seed + 2 author-supplied
+support mutations → `inject` → `run --real-nli`. **19 / 20 rows match.**
+
+| class \ policy | vanilla | existence | two-gate | three-gate |
+|---|---|---|---|---|
+| Valid          | 1 / 0 | 1 / 0 | 1 / 0 | **0 / 1** |
+| FabricatedSpan  | 1 / 0 | 0 / 1 | 0 / 1 | 0 / 1 |
+| OutOfContext    | 1 / 0 | 1 / 0 | 0 / 1 | 0 / 1 |
+| Unsupported     | 1 / 0 | 1 / 0 | 1 / 0 | 0 / 1 |
+| Contradicted    | 1 / 0 | 1 / 0 | 1 / 0 | 0 / 1 |
+
+**Every injected failure is caught at exactly its gate on real label
+text** (16/16 injected rows) — the structural kernel survives contact
+with a real PDF, not just the synthetic bootstrap. The single miss is
+again the NLI false-refusal-on-valid, and this example pins the
+*mechanism* precisely:
+
+- The claim — *"the active ingredient … is zinc oxide at a
+  concentration of 20%"* — is trivially true; the label literally reads
+  `Zinc Oxide 20%` under `Active Ingredients`.
+- Cited to the single span `"Zinc Oxide 20%"`, `distilbert-MNLI` rates
+  the pair *neutral* — too weak to bridge two words to the elaborated
+  sentence.
+- Adding the `"Active Ingredients"` header span to the citation **did
+  not help and cannot**: `NliSupportChecker` is per-span strict-wins
+  (`nli.rs`) — it checks each cited span independently and any single
+  `Neutral` sinks the whole answer. A header span is neutral w.r.t. the
+  concentration claim, so a richer citation is structurally guaranteed
+  to refuse here.
+
+So the false-refusal is the product of *two* compounding factors, both
+real and both paper-relevant: a weak NLI model **and** conservative
+strict-wins aggregation. It is not an authoring artifact — the example
+is genuinely valid. This is the strongest single motivation yet for the
+§5.1 DeBERTa-v3-large upgrade, and it surfaces a §3.4 design question:
+per-span strict-wins vs. concatenated-evidence aggregation. We keep
+strict-wins (conservative; "every citation must hold on its own" is the
+stronger safety claim) and note concatenated-evidence as future work.
+
+Reproduce: see [`docs/EVAL.md`](../EVAL.md) "Authoring the benchmark".
+
+---
+
 ## Caveats (do not over-read these)
 
 - **Bootstrap, not the benchmark.** 30 hand seeds → 58 augmented.
@@ -131,3 +178,10 @@ on the full benchmark.
 - §5.1/§5.6: the NLI gate's failure mode is a false-refusal-on-valid
   pattern, not a missed-failure pattern — good for a safety framing,
   and a concrete motivation for the DeBERTa upgrade.
+- §3.4: Result 3 surfaces a real aggregation design choice (per-span
+  strict-wins vs. concatenated-evidence). Decided: keep strict-wins,
+  document the alternative. Better raised in the paper than discovered
+  by a reviewer.
+- The kernel now holds on a real DailyMed PDF (Result 3), not only the
+  synthetic fixture — the §4.1 corpus path and the §4.4 injection
+  operators work on production label text.
