@@ -209,6 +209,91 @@ a now-standing artifact: the larger dataset is built by hand-authoring
 ~300 valid seeds with support mutations, then running `evidence-eval
 inject` to materialize the failure-injection corpus.
 
+## Authoring the benchmark
+
+Install the CLI once, then loop per label:
+
+```sh
+cd <repo> && cargo install --path crates/evidence-eval --force
+
+evidence-eval fetch dailymed --output ~/dailymed-corpus --limit 50
+evidence-eval author --pdf ~/dailymed-corpus/labels/<file>.pdf \
+    --name <slug> --page 1 > ~/evidence-bench/<slug>.toml
+# …edit the TOML: pick spans, write the question + grounded answer…
+evidence-eval lint  ~/evidence-bench/        # file OR directory
+evidence-eval stats ~/evidence-bench/        # class balance as you go
+evidence-eval inject ~/evidence-bench/<slug>.toml --output /tmp/inj.toml
+evidence-eval run   /tmp/inj.toml --real-nli
+```
+
+Spans are **line-level** (one readable run per span), not per-glyph —
+paste 2–5 lines from the comment block into `corpus_spans`.
+
+### Authoring guidelines (learned from the first real label)
+
+1. **Cite minimally.** A `valid` example's `cited_spans` must contain
+   only spans that *individually* entail the claim. The support gate is
+   per-span strict-wins (`query/nli.rs`): it checks each cited span
+   independently and **any single `Neutral` refuses the whole answer**.
+   Adding a section-header or context span (neutral w.r.t. the claim)
+   is structurally guaranteed to turn a true answer into
+   `refused(unsupported)`. More citations is not safer here.
+
+2. **Phrase `valid` answers lexically close to the cited span.** A
+   terse span (`"Zinc Oxide 20%"`) will not entail an elaborated
+   sentence (*"the active ingredient … at a concentration of 20%"*)
+   under a weak NLI model. This does **not** mean distort the claim to
+   please the model: the benchmark's structural results (§5.2/§5.3) are
+   measured under the deterministic *mock* checker (always 100%);
+   `--real-nli` valid-retention is the *separate NLI-quality column*,
+   where weak-model false-refusals are expected data, not authoring
+   errors. Author the truthful claim; tight phrasing just keeps the
+   real-NLI column readable.
+
+3. **Aggregation is a fixed design choice, not a knob to author
+   around.** Per-span strict-wins is intentional — "every citation must
+   hold on its own" is the stronger safety claim. A
+   concatenated-evidence alternative (join cited spans, check once)
+   would suit union-supported claims; it is noted as future work, not
+   shipped. Author to strict-wins.
+
+### Worked `valid` template
+
+A clean single-span quantitative example. Note: one tight cited span,
+answer hugging the span text, two contrast-set mutations for `inject`.
+
+```toml
+[[example]]
+name = "spf30_active_ingredient_concentration"
+class = "valid"
+description = "Single-span quantitative claim from an OTC sunscreen label."
+
+corpus_spans = [
+    { id = 10, page = 1, text = "Active Ingredients" },
+    { id = 20, page = 1, text = "Zinc Oxide 20%" },
+]
+prompt_chunks = [
+    { id = 1, span_range = [10, 20], text = "Active Ingredients Zinc Oxide 20%" },
+]
+response_sentences = [
+    { text = "The active ingredient is zinc oxide 20%.", cited_spans = [20] },
+]
+
+[[example.support_mutations]]
+text = "The active ingredient is zinc oxide 10%."   # number perturbation
+class = "contradicted"
+
+[[example.support_mutations]]
+text = "Reapply at least every two hours."          # topic substitution
+class = "unsupported"
+```
+
+Run it through `lint → inject → run --real-nli`. The structural rows
+(existence / in-context / contradicted / unsupported) must all be ✓;
+the `Valid | three_gate` row under `--real-nli` may still be ✗ with
+`distilbert-MNLI` — that is the measured weak-model column, and it is
+the concrete §5.1 motivation for DeBERTa-v3-large, not a bug.
+
 ## Open work, toward the paper
 
 This PR ships the harness, the bootstrap dataset, and the determinism
