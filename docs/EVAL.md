@@ -145,6 +145,28 @@ Both failure modes are real cases the paper will note as **open work**:
   closes most of the gap. Cheap, deferred until we have eval data
   from real customer corpora to calibrate against.
 
+### Swapping the NLI model (§5.1 comparison)
+
+`--nli-model <hf-repo>` substitutes a different MNLI checkpoint for the
+default distilbert, on the *same* labeled set — this is the §5.1
+model-comparison the false-refusal finding motivates. The repo must
+expose `onnx/model.onnx`, `tokenizer.json`, and a `config.json` whose
+`id2label` is an MNLI permutation. Example:
+
+```sh
+# Baseline (default distilbert) vs. a DeBERTa-v3-large MNLI checkpoint,
+# same dataset — the divergence delta is the §5.1 result.
+evidence-eval run /tmp/inj.toml --real-nli
+evidence-eval run /tmp/inj.toml --real-nli \
+    --nli-model <org/deberta-v3-large-mnli-onnx>
+```
+
+The expectation: the structural rows are unchanged (the gate ordering
+is model-independent); only the `valid`/`three_gate` false-refusals
+should shrink under the stronger model. If they do, that delta is the
+empirical payload of §5.1. (`--nli-model` without `--real-nli` is a
+no-op and warns.)
+
 ## Running the harness
 
 ```sh

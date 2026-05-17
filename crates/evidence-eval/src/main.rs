@@ -26,7 +26,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
     fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, load_dataset_path,
-    render_for_pdf, render_report, render_stats, run_with_mode, write_markdown, AuthorOptions,
+    render_for_pdf, render_report, render_stats, run_with_model, write_markdown, AuthorOptions,
     DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
@@ -56,6 +56,14 @@ enum Command {
         /// run downloads `Xenova/distilbert-base-uncased-mnli` (~265 MB).
         #[arg(long)]
         real_nli: bool,
+        /// Override the NLI model repo (HuggingFace id) used by
+        /// `--real-nli`. Lets you measure a stronger checkpoint (e.g. a
+        /// DeBERTa-v3-large MNLI model) on the same labeled set for the
+        /// paper's model comparison. Ignored without `--real-nli`. The
+        /// repo must expose `onnx/model.onnx`, `tokenizer.json`, and a
+        /// `config.json` with an `id2label` MNLI permutation.
+        #[arg(long, value_name = "HF_REPO")]
+        nli_model: Option<String>,
     },
     /// Generate matched-pair failure variants from a dataset of valid
     /// seeds. Each valid example yields two structural injections
@@ -146,7 +154,8 @@ fn real_main() -> Result<ExitCode> {
             dataset,
             output,
             real_nli,
-        } => run_command(&dataset, output.as_deref(), real_nli),
+            nli_model,
+        } => run_command(&dataset, output.as_deref(), real_nli, nli_model.as_deref()),
         Command::Inject { input, output } => inject_command(&input, &output),
         Command::Fetch { source } => match source {
             FetchSource::Dailymed {
@@ -226,6 +235,7 @@ fn run_command(
     dataset_path: &std::path::Path,
     output: Option<&std::path::Path>,
     real_nli: bool,
+    nli_model: Option<&str>,
 ) -> Result<ExitCode> {
     let dataset = load_dataset_path(dataset_path).context("loading dataset")?;
     let mode = if real_nli {
@@ -233,7 +243,10 @@ fn run_command(
     } else {
         SupportMode::Mock
     };
-    let rows = run_with_mode(&dataset, mode).context("running eval")?;
+    if nli_model.is_some() && !real_nli {
+        eprintln!("warning: --nli-model is ignored without --real-nli");
+    }
+    let rows = run_with_model(&dataset, mode, nli_model).context("running eval")?;
     let report = Report::new(rows);
     let md = write_markdown(&report);
 

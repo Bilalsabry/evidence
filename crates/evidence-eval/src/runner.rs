@@ -132,13 +132,43 @@ pub fn run(dataset: &Dataset) -> anyhow::Result<Vec<RunResult>> {
 /// Returns an error if dataset seeding fails or — under
 /// [`SupportMode::RealNli`] — the NLI model fails to initialize.
 pub fn run_with_mode(dataset: &Dataset, mode: SupportMode) -> anyhow::Result<Vec<RunResult>> {
+    run_with_model(dataset, mode, None)
+}
+
+/// Like [`run_with_mode`] but, under [`SupportMode::RealNli`], lets the
+/// caller substitute a different HuggingFace NLI repo for the default
+/// (`distilbert-base-uncased-mnli`). Pass `Some(repo)` to measure a
+/// stronger model (e.g. a DeBERTa-v3-large MNLI checkpoint) on the same
+/// labeled set — the §5.1 model-comparison the paper needs. `None`
+/// reuses the process-wide shared default (cached across calls).
+///
+/// # Errors
+///
+/// Returns an error if dataset seeding fails or — under
+/// [`SupportMode::RealNli`] — the NLI model fails to initialize.
+pub fn run_with_model(
+    dataset: &Dataset,
+    mode: SupportMode,
+    nli_model: Option<&str>,
+) -> anyhow::Result<Vec<RunResult>> {
+    // A custom repo gets an owned encoder scoped to this call; the
+    // default reuses the cached process-wide instance. Either way the
+    // checker borrows it for the loop below — no `'static` needed.
+    let owned_encoder: Option<NliCrossEncoder> = match (mode, nli_model) {
+        (SupportMode::RealNli, Some(repo)) => Some(
+            NliCrossEncoder::for_model(repo)
+                .map_err(|e| anyhow::anyhow!("NLI init ({repo}): {e}"))?,
+        ),
+        _ => None,
+    };
     // For RealNli mode, load the model once before iterating so first-
     // example latency doesn't include the download.
-    let nli_encoder: Option<&'static NliCrossEncoder> = match mode {
+    let nli_encoder: Option<&NliCrossEncoder> = match mode {
         SupportMode::Mock => None,
-        SupportMode::RealNli => {
-            Some(NliCrossEncoder::shared().map_err(|e| anyhow::anyhow!("NLI init: {e}"))?)
-        }
+        SupportMode::RealNli => Some(match owned_encoder.as_ref() {
+            Some(e) => e,
+            None => NliCrossEncoder::shared().map_err(|e| anyhow::anyhow!("NLI init: {e}"))?,
+        }),
     };
 
     let mut rows = Vec::with_capacity(dataset.examples.len() * Policy::all().len());
@@ -177,13 +207,13 @@ pub fn run_with_mode(dataset: &Dataset, mode: SupportMode) -> anyhow::Result<Vec
 /// Build the support checker for one (mode, example) pair. Returns the
 /// owners so the runner can take references without the checker being
 /// dropped on the spot.
-fn build_checker(
+fn build_checker<'e>(
     mode: SupportMode,
-    nli_encoder: Option<&'static NliCrossEncoder>,
+    nli_encoder: Option<&'e NliCrossEncoder>,
     class: HallucinationClass,
 ) -> (
     Option<Box<dyn SupportChecker>>,
-    Option<NliSupportChecker<'static>>,
+    Option<NliSupportChecker<'e>>,
 ) {
     match mode {
         SupportMode::Mock => (mock_support_for(class), None),
