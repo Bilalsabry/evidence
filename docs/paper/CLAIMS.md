@@ -24,10 +24,24 @@ The three are *operationally* independent: each can fail without the others fail
 
 ## The empirical claim, more precisely
 
-On a 300-example FDA drug-label benchmark with controlled failure injection (existence / in-context / support variants per example):
+On the FDA drug-label benchmark (v2, 254 seeds → 1,270 examples via
+controlled failure injection):
 
-1. **Per-rule isolation.** Each rule, applied alone, catches its labeled failure class with F1 ≥ 0.95.
-2. **Non-overlap.** Errors caught by rule 3 are NOT caught by rules 1 or 2 in more than X% of cases (target: ≥80% disjoint).
+1. **Per-rule isolation.** Each rule catches its labeled failure class
+   with F1 ≥ 0.95.
+   - **Measured (`evidence-eval metrics`, DeBERTa-v3 support):**
+     existence F1 = **1.000**, in-context F1 = **1.000** (target
+     exceeded); support F1 = **0.929** (recall 0.992, precision 0.873 —
+     the precision gap is the §5.1 NLI conservatism, not a missed
+     failure). 2/3 rules exceed the target; the third is recall-strong
+     and precision-bounded by the NLI checkpoint. See
+     `docs/paper/rule-metrics.md`.
+2. **Non-overlap.** Errors caught by rule 3 are NOT caught by rules 1
+   or 2 (target: ≥80% disjoint).
+   - **Measured: 100% disjoint.** OutOfContext accepted by
+     existence-only 254/254; Unsupported+Contradicted accepted by
+     two-gate 508/508. Each failure class is invisible to the rules
+     preceding its owning gate. Target far exceeded.
 3. **Additive lift.** The composed validator (rules 1 + 2 + 3) improves citation F1 over the strongest single-rule baseline by Δ ≥ Y points (target: ≥10 points). [Replace X, Y once experiments run; do NOT publish with placeholders.]
 4. **Natural-failure agreement.** On naturally-occurring LLM hallucinations (no failure injection), the three-rule validator catches the supplementary human-graded errors at rate ≥ Z%. [Z to be measured in Week 8.]
 
@@ -69,7 +83,7 @@ If only (1) holds, the work was scientifically valid and we publish on arXiv. If
 
 ## What we don't yet know
 
-- The non-overlap percentage. Currently hand-waved as "target ≥80%." First real number lands in Week 7.
+- ~~The non-overlap percentage. Currently hand-waved as "target ≥80%."~~ **Resolved: 100% disjoint on the v2 benchmark** (`docs/paper/rule-metrics.md`).
 - Whether DeBERTa-v3-large materially outperforms `distilbert-base-uncased-mnli` on this task. Likely yes (TRUE-paper evidence), but we'll measure.
 - Whether the 30-example bootstrap pattern (98.3% NLI agreement) holds at 300 examples. Almost certainly some regression as we hit edge cases. Plan accordingly.
 - Pharma co-author for human eval. Open question; ask this week.
