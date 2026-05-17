@@ -81,14 +81,16 @@ enum Command {
     /// catch wrong-class structure, fabricated spans that aren't
     /// fabricated, etc.
     Lint {
-        /// Path to a TOML eval dataset.
+        /// Path to a TOML eval dataset, or a directory of `*.toml`
+        /// datasets (linted together as one set).
         dataset: PathBuf,
     },
     /// Print descriptive stats for a dataset: class balance, per-example
     /// shape, and what `inject` will materialize. Read-only; never fails
     /// on a parseable dataset.
     Stats {
-        /// Path to a TOML eval dataset.
+        /// Path to a TOML eval dataset, or a directory of `*.toml`
+        /// datasets (aggregated into one summary).
         dataset: PathBuf,
     },
     /// Render a TOML authoring skeleton from a PDF. Lists every span
@@ -165,7 +167,7 @@ fn real_main() -> Result<ExitCode> {
 }
 
 fn stats_command(dataset_path: &std::path::Path) -> Result<ExitCode> {
-    let dataset = load_dataset(dataset_path).context("loading dataset for stats")?;
+    let dataset = load_dataset_path(dataset_path).context("loading dataset for stats")?;
     let stats = DatasetStats::compute(&dataset);
     print!("{}", render_stats(&stats));
     Ok(ExitCode::SUCCESS)
@@ -189,7 +191,7 @@ fn author_command(
 }
 
 fn lint_command(dataset_path: &std::path::Path) -> Result<ExitCode> {
-    let dataset = load_dataset(dataset_path).context("loading dataset for lint")?;
+    let dataset = load_dataset_path(dataset_path).context("loading dataset for lint")?;
     let diags = lint(&dataset);
     let report = render_report(&diags);
     print!("{report}");
