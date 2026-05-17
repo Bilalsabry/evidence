@@ -75,6 +75,8 @@ about the support gate, not an artifact.
 gate, Δ=0 between models, zero cross-gate leakage. The §5.2/§5.3
 kernel claim holds on real drug-label text under both models. This is
 the strongest result and it never depended on the support gate.
+Quantified in `docs/paper/rule-metrics.md`: existence & in-context
+F1 = 1.000, support F1 = 0.929 (recall 0.992), **100% disjoint**.
 
 **The support gate works on real failures.** DeBERTa catches
 Contradicted 244/254 (96%) and Unsupported 233/254 (92%). It is

@@ -34,6 +34,6 @@ pub use inject::{
     InjectionError,
 };
 pub use lint::{has_errors, lint, render_report, Diagnostic, Severity};
-pub use report::{compare_report, write_markdown, Report};
+pub use report::{compare_report, rule_metrics, write_markdown, Prf, Report};
 pub use runner::{run, run_with_mode, run_with_model, Outcome, Policy, RunResult, SupportMode};
 pub use stats::{render_stats, DatasetStats, Dist};

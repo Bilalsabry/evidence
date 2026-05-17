@@ -26,8 +26,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
     compare_report, fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset,
-    load_dataset_path, render_for_pdf, render_report, render_stats, run_with_model, write_markdown,
-    AuthorOptions, DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
+    load_dataset_path, render_for_pdf, render_report, render_stats, rule_metrics, run_with_model,
+    write_markdown, AuthorOptions, DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode,
+    UreqClient,
 };
 use std::time::Duration;
 
@@ -81,6 +82,25 @@ enum Command {
         #[arg(long, value_name = "HF_REPO")]
         baseline_nli: Option<String>,
         /// Optional output path for the comparison markdown. Default: stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Compute §5.2 per-rule precision/recall/F1 (marginal-gate
+    /// decomposition) and §5.3 non-overlap evidence for a dataset.
+    /// Structural rules are model-independent; pass `--real-nli`
+    /// (optionally `--nli-model`) so the support row reflects a real
+    /// checkpoint instead of the deterministic mock.
+    Metrics {
+        /// Path to a TOML eval dataset, or a directory of `*.toml`.
+        /// Inject first — metrics needs the failure variants.
+        dataset: PathBuf,
+        /// Use the real NLI cross-encoder for the support row.
+        #[arg(long)]
+        real_nli: bool,
+        /// Override the NLI model repo (HF id) used by `--real-nli`.
+        #[arg(long, value_name = "HF_REPO")]
+        nli_model: Option<String>,
+        /// Optional output path for the metrics markdown. Default: stdout.
         #[arg(long)]
         output: Option<PathBuf>,
     },
@@ -186,6 +206,12 @@ fn real_main() -> Result<ExitCode> {
             baseline_nli.as_deref(),
             output.as_deref(),
         ),
+        Command::Metrics {
+            dataset,
+            real_nli,
+            nli_model,
+            output,
+        } => metrics_command(&dataset, real_nli, nli_model.as_deref(), output.as_deref()),
         Command::Inject { input, output } => inject_command(&input, &output),
         Command::Fetch { source } => match source {
             FetchSource::Dailymed {
@@ -317,6 +343,32 @@ fn compare_command(
     if let Some(out_path) = output {
         std::fs::write(out_path, md.as_bytes()).context("writing comparison")?;
         eprintln!("wrote comparison to {}", out_path.display());
+    } else {
+        print!("{md}");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn metrics_command(
+    dataset_path: &std::path::Path,
+    real_nli: bool,
+    nli_model: Option<&str>,
+    output: Option<&std::path::Path>,
+) -> Result<ExitCode> {
+    let dataset = load_dataset_path(dataset_path).context("loading dataset")?;
+    let mode = if real_nli {
+        SupportMode::RealNli
+    } else {
+        SupportMode::Mock
+    };
+    if nli_model.is_some() && !real_nli {
+        eprintln!("warning: --nli-model is ignored without --real-nli");
+    }
+    let rows = run_with_model(&dataset, mode, nli_model).context("running eval")?;
+    let md = rule_metrics(&rows);
+    if let Some(out_path) = output {
+        std::fs::write(out_path, md.as_bytes()).context("writing metrics")?;
+        eprintln!("wrote metrics to {}", out_path.display());
     } else {
         print!("{md}");
     }
