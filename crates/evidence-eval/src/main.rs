@@ -25,9 +25,9 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
-    fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset, load_dataset_path,
-    render_for_pdf, render_report, render_stats, run_with_model, write_markdown, AuthorOptions,
-    DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
+    compare_report, fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset,
+    load_dataset_path, render_for_pdf, render_report, render_stats, run_with_model, write_markdown,
+    AuthorOptions, DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -64,6 +64,25 @@ enum Command {
         /// `config.json` with an `id2label` MNLI permutation.
         #[arg(long, value_name = "HF_REPO")]
         nli_model: Option<String>,
+    },
+    /// Run a dataset under two NLI models (both real-NLI) and emit the
+    /// §5.1 model-comparison table: per-class three-gate agreement for
+    /// each model plus the delta. The headline is valid-retention — does
+    /// the candidate stop false-refusing true claims? Both models
+    /// download on first use.
+    Compare {
+        /// Path to a TOML eval dataset, or a directory of `*.toml`.
+        dataset: PathBuf,
+        /// Candidate NLI repo (HuggingFace id) to compare against the
+        /// baseline — e.g. a DeBERTa-v3-large MNLI checkpoint.
+        #[arg(long, value_name = "HF_REPO")]
+        candidate_nli: String,
+        /// Baseline NLI repo. Default: the built-in distilbert.
+        #[arg(long, value_name = "HF_REPO")]
+        baseline_nli: Option<String>,
+        /// Optional output path for the comparison markdown. Default: stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
     /// Generate matched-pair failure variants from a dataset of valid
     /// seeds. Each valid example yields two structural injections
@@ -156,6 +175,17 @@ fn real_main() -> Result<ExitCode> {
             real_nli,
             nli_model,
         } => run_command(&dataset, output.as_deref(), real_nli, nli_model.as_deref()),
+        Command::Compare {
+            dataset,
+            candidate_nli,
+            baseline_nli,
+            output,
+        } => compare_command(
+            &dataset,
+            &candidate_nli,
+            baseline_nli.as_deref(),
+            output.as_deref(),
+        ),
         Command::Inject { input, output } => inject_command(&input, &output),
         Command::Fetch { source } => match source {
             FetchSource::Dailymed {
@@ -264,6 +294,33 @@ fn run_command(
         eprintln!("disagreement: {agree} / {total} rows match expected matrix");
         Ok(ExitCode::from(2))
     }
+}
+
+fn compare_command(
+    dataset_path: &std::path::Path,
+    candidate_nli: &str,
+    baseline_nli: Option<&str>,
+    output: Option<&std::path::Path>,
+) -> Result<ExitCode> {
+    let dataset = load_dataset_path(dataset_path).context("loading dataset")?;
+    let baseline_rows =
+        run_with_model(&dataset, SupportMode::RealNli, baseline_nli).context("baseline run")?;
+    let candidate_rows = run_with_model(&dataset, SupportMode::RealNli, Some(candidate_nli))
+        .context("candidate run")?;
+    let baseline_label = baseline_nli.unwrap_or("distilbert (default)");
+    let md = compare_report(
+        baseline_label,
+        &baseline_rows,
+        candidate_nli,
+        &candidate_rows,
+    );
+    if let Some(out_path) = output {
+        std::fs::write(out_path, md.as_bytes()).context("writing comparison")?;
+        eprintln!("wrote comparison to {}", out_path.display());
+    } else {
+        print!("{md}");
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn inject_command(input: &std::path::Path, output: &std::path::Path) -> Result<ExitCode> {
