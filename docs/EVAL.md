@@ -270,70 +270,76 @@ evidence-eval run   /tmp/inj.toml --real-nli
 Spans are **line-level** (one readable run per span), not per-glyph —
 paste 2–5 lines from the comment block into `corpus_spans`.
 
-### Authoring guidelines (learned from the first real label)
+### Authoring guidelines
 
-1. **Cite minimally.** A `valid` example's `cited_spans` must contain
-   only spans that *individually* entail the claim. The support gate is
-   per-span strict-wins (`query/nli.rs`): it checks each cited span
-   independently and **any single `Neutral` refuses the whole answer**.
-   Adding a section-header or context span (neutral w.r.t. the claim)
-   is structurally guaranteed to turn a true answer into
-   `refused(unsupported)`. More citations is not safer here.
+> **Correction (N=263 audit).** An earlier guideline said "cite
+> minimally — one span." On line-wrapped PDF text that is *wrong*: the
+> `author` tool emits **line-level** spans, so one fact is split across
+> `id = 10, 20, 30…`. Citing a single line yields a sentence
+> *fragment* missing its subject/verb/number, which NLI correctly
+> refuses. ~40% of the v1 `valid` set was false-refused for this reason
+> by *both* distilbert and DeBERTa — a benchmark bug, not a model
+> finding. The rule below supersedes it.
 
-2. **Phrase `valid` answers lexically close to the cited span.** A
-   terse span (`"Zinc Oxide 20%"`) will not entail an elaborated
-   sentence (*"the active ingredient … at a concentration of 20%"*)
-   under a weak NLI model. This does **not** mean distort the claim to
-   please the model: the benchmark's structural results (§5.2/§5.3) are
-   measured under the deterministic *mock* checker (always 100%);
-   `--real-nli` valid-retention is the *separate NLI-quality column*,
-   where weak-model false-refusals are expected data, not authoring
-   errors. Author the truthful claim; tight phrasing just keeps the
-   real-NLI column readable.
+1. **The cited span must be a complete, self-contained fact.** Read the
+   cited span's `text` *alone*, with nothing else. If it is not a
+   grammatical statement that a careful reader would agree entails the
+   response sentence on its own, it is the wrong span. The `author`
+   output splits sentences across consecutive line entries — you must
+   **concatenate the consecutive lines that form the whole sentence
+   into ONE corpus span** (join with single spaces, trim `\r\n`,
+   verbatim words only — no paraphrase or invention). Never cite a
+   fragment ("…for the clinical", "Doxycycline is virtually completely").
 
-3. **Aggregation is a fixed design choice, not a knob to author
-   around.** Per-span strict-wins is intentional — "every citation must
-   hold on its own" is the stronger safety claim. A
-   concatenated-evidence alternative (join cited spans, check once)
-   would suit union-supported claims; it is noted as future work, not
-   shipped. Author to strict-wins.
+2. **Cite exactly that one self-contained span.** `cited_spans` lists
+   only the single complete-fact span. The support gate is per-span
+   strict-wins (`query/nli.rs`): any extra header/context span is
+   neutral and refuses the whole answer. One complete span, cited once.
 
-### Worked `valid` template
+3. **The response sentence is a faithful restatement of that span.**
+   High lexical overlap, same numbers/entities, no added facts the span
+   doesn't state. If you can't say the sentence is entailed by the
+   cited span read in isolation, pick a different fact.
 
-A clean single-span quantitative example. Note: one tight cited span,
-answer hugging the span text, two contrast-set mutations for `inject`.
+4. **Strict-wins is fixed, not a knob.** "Every citation holds on its
+   own" is the safety claim. Concatenated-evidence aggregation is noted
+   as future work, not shipped. Author to strict-wins.
+
+### Worked `valid` template (corrected)
+
+One **complete-sentence** cited span (wrapped PDF lines merged into it),
+answer faithfully restating it, two contrast mutations for `inject`.
 
 ```toml
 [[example]]
-name = "spf30_active_ingredient_concentration"
+name = "fluconazole_oral_bioavailability"
 class = "valid"
-description = "Single-span quantitative claim from an OTC sunscreen label."
+description = "Single complete-sentence span; answer is entailed by that span alone."
 
+# The author tool emitted this across two lines; merged into ONE span.
 corpus_spans = [
-    { id = 10, page = 1, text = "Active Ingredients" },
-    { id = 20, page = 1, text = "Zinc Oxide 20%" },
+    { id = 10, page = 1, text = "In normal volunteers, the bioavailability of orally administered fluconazole is over 90% compared with intravenous administration." },
 ]
 prompt_chunks = [
-    { id = 1, span_range = [10, 20], text = "Active Ingredients Zinc Oxide 20%" },
+    { id = 1, span_range = [10, 10], text = "In normal volunteers, the bioavailability of orally administered fluconazole is over 90% compared with intravenous administration." },
 ]
 response_sentences = [
-    { text = "The active ingredient is zinc oxide 20%.", cited_spans = [20] },
+    { text = "The oral bioavailability of fluconazole is over 90% compared with intravenous administration.", cited_spans = [10] },
 ]
 
 [[example.support_mutations]]
-text = "The active ingredient is zinc oxide 10%."   # number perturbation
+text = "The oral bioavailability of fluconazole is under 10% compared with intravenous administration."
 class = "contradicted"
 
 [[example.support_mutations]]
-text = "Reapply at least every two hours."          # topic substitution
+text = "Fluconazole tablets are available in 50 mg, 100 mg, 150 mg, and 200 mg strengths."
 class = "unsupported"
 ```
 
-Run it through `lint → inject → run --real-nli`. The structural rows
-(existence / in-context / contradicted / unsupported) must all be ✓;
-the `Valid | three_gate` row under `--real-nli` may still be ✗ with
-`distilbert-MNLI` — that is the measured weak-model column, and it is
-the concrete §5.1 motivation for DeBERTa-v3-large, not a bug.
+Self-test before saving: cover everything except the cited span's
+`text` and read only that. Does it, by itself, state the fact the
+response sentence claims? If not, the example is broken regardless of
+what `lint` says (lint checks structure, not entailment).
 
 ## Open work, toward the paper
 
