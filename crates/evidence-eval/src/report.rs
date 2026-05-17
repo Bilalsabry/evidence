@@ -130,6 +130,30 @@ fn refused(e: &ExampleRow, p: Policy) -> bool {
     e.refused.get(&p).copied().unwrap_or(false)
 }
 
+/// Treat a policy as a binary "should this citation be refused?"
+/// classifier over the whole injected set: positive = the example is
+/// an injected failure (class != Valid) and so *should* be refused;
+/// prediction = the policy refused it. Used for the claim-3 ablation
+/// ladder.
+fn policy_refusal_prf(ex: &[ExampleRow], p: Policy) -> Prf {
+    let mut m = Prf {
+        tp: 0,
+        fp: 0,
+        fn_: 0,
+    };
+    for e in ex {
+        let is_failure = e.class != HallucinationClass::Valid;
+        let pred = refused(e, p);
+        match (is_failure, pred) {
+            (true, true) => m.tp += 1,
+            (true, false) => m.fn_ += 1,
+            (false, true) => m.fp += 1,
+            (false, false) => {}
+        }
+    }
+    m
+}
+
 /// §5.2 + §5.3 metrics: per-rule marginal precision/recall/F1, and the
 /// non-overlap evidence (each failure class is invisible to the rules
 /// that precede its owning gate).
@@ -285,6 +309,53 @@ pub fn rule_metrics(rows: &[RunResult]) -> String {
         "\nEach failure class is caught only at the gate that owns it; \
          the preceding rules do not see it. Higher percentages = cleaner \
          disjointness."
+    );
+
+    // --- claim 3: additive lift (ablation ladder) --------------------------
+    // Each policy as a binary should-refuse classifier over the
+    // injected set. The policies are nested, so the only NON-composed
+    // baselines (a single rule, not a composition) are vanilla and
+    // existence-only; in-context-alone and support-alone are not
+    // isolable as policies. Lift = F1(three-gate) − best non-composed.
+    let ladder = [
+        ("vanilla_rag", Policy::VanillaRag, false),
+        ("existence_only", Policy::ExistenceOnly, false),
+        ("two_gate (1+2)", Policy::TwoGate, true),
+        ("three_gate (1+2+3)", Policy::ThreeGate, true),
+    ];
+    let f1_of = |p: Policy| policy_refusal_prf(&ex, p).f1();
+    let baseline = f1_of(Policy::VanillaRag).max(f1_of(Policy::ExistenceOnly));
+    let composed = f1_of(Policy::ThreeGate);
+    let lift = (composed - baseline) * 100.0;
+
+    let _ = writeln!(out, "\n## Claim 3 — additive lift (ablation)\n");
+    let _ = writeln!(
+        out,
+        "Each policy as a binary should-refuse classifier over all {} \
+         examples (positive = injected failure).\n",
+        ex.len()
+    );
+    let _ = writeln!(out, "| policy | precision | recall | F1 | composed? |");
+    let _ = writeln!(out, "|---|---|---|---|---|");
+    for (name, p, composed_flag) in ladder {
+        let m = policy_refusal_prf(&ex, p);
+        let _ = writeln!(
+            out,
+            "| {name} | {:.3} | {:.3} | {:.3} | {} |",
+            m.precision(),
+            m.recall(),
+            m.f1(),
+            if composed_flag { "yes" } else { "no" },
+        );
+    }
+    let _ = writeln!(
+        out,
+        "\n**Additive lift: +{lift:.1} F1 points** — composed validator \
+         (three-gate, F1 {composed:.3}) over the strongest non-composed \
+         baseline (F1 {baseline:.3}). Only `vanilla_rag` and \
+         `existence_only` are non-composed (single-rule) policies; \
+         in-context-alone and support-alone are not isolable in a nested \
+         policy stack. Target was ≥10 points."
     );
     out
 }
@@ -610,5 +681,29 @@ mod metrics_tests {
         assert!((m.precision() - 0.75).abs() < 1e-9);
         assert!((m.recall() - 0.75).abs() < 1e-9);
         assert!((m.f1() - 0.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn additive_lift_ladder() {
+        // perfect_rows: 3 failures (fab, ooc, con) + 1 valid the
+        // support gate false-refuses.
+        // vanilla refuses nothing -> F1 0.
+        // existence_only refuses fab only -> P 1.0 R 1/3 -> F1 0.500.
+        // three_gate refuses all 3 + the valid (fp) -> P 0.75 R 1.0
+        //   -> F1 0.857. Lift = (0.857 - 0.500) * 100 = +35.7.
+        let out = rule_metrics(&perfect_rows());
+        assert!(out.contains("## Claim 3 — additive lift"));
+        assert!(
+            out.contains("| existence_only | 1.000 | 0.333 | 0.500 | no |"),
+            "got:\n{out}"
+        );
+        assert!(
+            out.contains("| three_gate (1+2+3) | 0.750 | 1.000 | 0.857 | yes |"),
+            "got:\n{out}"
+        );
+        assert!(
+            out.contains("**Additive lift: +35.7 F1 points**"),
+            "got:\n{out}"
+        );
     }
 }
