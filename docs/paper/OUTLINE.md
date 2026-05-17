@@ -98,7 +98,17 @@ The synthetic-failure approach is defensible because each failure is generated b
 
 **Subsection 5.7: Cost analysis.** Latency per rule. Cumulative validator overhead vs. retrieval. (Industry readers care.)
 
-**Draws from:** experiments to be run Weeks 6–8. Each subsection currently has placeholder numbers; replace with real measurements before publication. [`preliminary-results.md`](preliminary-results.md) already de-risks §5.2/§5.3 on the bootstrap set: the catch matrix is exactly diagonal (kernel holds end-to-end), and the real-NLI run shows the support gate's failure mode is false-refusal-on-valid, not missed-failures — motivating the DeBERTa-v3-large upgrade in §5.1.
+**Draws from:** machine-drafted §5 with final numbers in
+[`section5-results.draft.md`](section5-results.draft.md) (revise before
+submission). §5.1–§5.4 are measured on the v2 FDA benchmark and
+reproducible: §5.2 existence/in-context F1 = 1.000, support F1 = 0.929;
+§5.3 100% disjoint; §5.4 additive lift +56.3 F1 points; §5.1 DeBERTa
+vs distilbert in [`nli-comparison.md`](nli-comparison.md). §5.5–§5.7
+(ALCE, natural-failure, cost) are not yet run and are marked `[OPEN]`.
+[`preliminary-results.md`](preliminary-results.md) carries the bootstrap
+de-risking history; [`rule-metrics.md`](rule-metrics.md) and
+[`benchmark-results.md`](benchmark-results.md) carry the v2 numbers and
+the v1→v2 audit.
 
 ---
 
