@@ -30,6 +30,43 @@ use super::{SupportChecker, SupportError, SupportVerdict};
 /// pipeline. Override with [`NliCrossEncoder::for_model`].
 pub const DEFAULT_NLI_MODEL_REPO: &str = "Xenova/distilbert-base-uncased-mnli";
 
+/// Candidate ONNX weight paths inside an MNLI repo, tried in order.
+/// The ecosystem is inconsistent: transformers.js / Xenova exports use
+/// `onnx/model.onnx`; Optimum exports drop `model.onnx` at the repo
+/// root; some only publish a quantized graph. Full precision is
+/// preferred over quantized (the support gate is accuracy-sensitive).
+/// This list is why `compare --candidate-nli <a real DeBERTa ONNX repo>`
+/// works first try instead of 404-ing on a layout assumption.
+const ONNX_WEIGHT_CANDIDATES: &[&str] = &[
+    "onnx/model.onnx",
+    "model.onnx",
+    "onnx/model_quantized.onnx",
+    "model_quantized.onnx",
+];
+
+/// Resolve the ONNX weights file, trying each known layout. Returns a
+/// clear error listing every path attempted if none resolve — far more
+/// actionable than a raw hf-hub 404 on a single hardcoded path.
+fn fetch_onnx_weights(
+    repo: &hf_hub::api::sync::ApiRepo,
+    repo_id: &str,
+) -> Result<std::path::PathBuf, NliError> {
+    let mut last_err = String::new();
+    for candidate in ONNX_WEIGHT_CANDIDATES {
+        match repo.get(candidate) {
+            Ok(path) => return Ok(path),
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+    Err(NliError::Download(format!(
+        "NLI repo `{repo_id}` exposes no ONNX weights at any known path \
+         ({}). It is probably not an ONNX export — point `--nli-model` / \
+         `--candidate-nli` at an ONNX conversion of the checkpoint. Last \
+         error: {last_err}",
+        ONNX_WEIGHT_CANDIDATES.join(", "),
+    )))
+}
+
 #[derive(Debug, Error)]
 pub enum NliError {
     #[error("failed to fetch NLI model files: {0}")]
@@ -84,23 +121,26 @@ impl NliCrossEncoder {
         Self::for_model(DEFAULT_NLI_MODEL_REPO)
     }
 
-    /// Load a specific HF repo. The repo must contain `onnx/model.onnx`,
-    /// `tokenizer.json`, and `config.json` with an `id2label` mapping
-    /// that names `entailment`, `neutral`, and `contradiction` (case
-    /// insensitive).
+    /// Load a specific HF repo. ONNX weights are probed across the
+    /// known layouts ([`ONNX_WEIGHT_CANDIDATES`]); the repo must also
+    /// have `tokenizer.json` and a `config.json` whose `id2label` names
+    /// `entailment`, `neutral`, and `contradiction` (case insensitive).
     ///
     /// # Errors
     ///
     /// See [`Self::new`].
     pub fn for_model(repo: &str) -> Result<Self, NliError> {
         let api = hf_hub::api::sync::Api::new().map_err(|e| NliError::Download(e.to_string()))?;
+        let repo_id = repo.to_string();
         let repo = api.model(repo.to_string());
-        let model_path = repo
-            .get("onnx/model.onnx")
-            .map_err(|e| NliError::Download(e.to_string()))?;
-        let tokenizer_path = repo
-            .get("tokenizer.json")
-            .map_err(|e| NliError::Download(e.to_string()))?;
+        let model_path = fetch_onnx_weights(&repo, &repo_id)?;
+        let tokenizer_path = repo.get("tokenizer.json").map_err(|e| {
+            NliError::Download(format!(
+                "NLI repo `{repo_id}` has no `tokenizer.json` (a fast/JSON \
+                 tokenizer is required; SentencePiece-only DeBERTa repos \
+                 won't work without one): {e}"
+            ))
+        })?;
         let config_path = repo
             .get("config.json")
             .map_err(|e| NliError::Download(e.to_string()))?;
