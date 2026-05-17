@@ -35,5 +35,5 @@ pub use inject::{
 };
 pub use lint::{has_errors, lint, render_report, Diagnostic, Severity};
 pub use report::{write_markdown, Report};
-pub use runner::{run, run_with_mode, Outcome, Policy, RunResult, SupportMode};
+pub use runner::{run, run_with_mode, run_with_model, Outcome, Policy, RunResult, SupportMode};
 pub use stats::{render_stats, DatasetStats, Dist};
