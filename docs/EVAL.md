@@ -154,8 +154,13 @@ expose `onnx/model.onnx`, `tokenizer.json`, and a `config.json` whose
 `id2label` is an MNLI permutation. Example:
 
 ```sh
-# Baseline (default distilbert) vs. a DeBERTa-v3-large MNLI checkpoint,
-# same dataset — the divergence delta is the §5.1 result.
+# One command: runs both models, emits the §5.1 table directly
+# (per-class three-gate agreement + delta; valid-retention headline).
+evidence-eval compare /tmp/inj.toml \
+    --candidate-nli <org/deberta-v3-large-mnli-onnx> \
+    --output docs/paper/nli-comparison.md
+
+# Or drive the two runs by hand if you want the full per-example detail:
 evidence-eval run /tmp/inj.toml --real-nli
 evidence-eval run /tmp/inj.toml --real-nli \
     --nli-model <org/deberta-v3-large-mnli-onnx>
