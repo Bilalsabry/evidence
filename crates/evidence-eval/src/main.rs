@@ -25,10 +25,10 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
-    compare_report, fetch_dailymed, has_errors, inject_all_variants, lint, load_dataset,
-    load_dataset_path, render_for_pdf, render_report, render_stats, rule_metrics, run_with_model,
-    write_markdown, AuthorOptions, DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode,
-    UreqClient,
+    audit_report, compare_report, fetch_dailymed, has_errors, has_missing, inject_all_variants,
+    lint, load_dataset, load_dataset_path, normalize, render_for_pdf, render_report, render_stats,
+    rule_metrics, run_with_model, write_markdown, AuthorOptions, DatasetStats, FetchConfig,
+    InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -132,6 +132,20 @@ enum Command {
         /// datasets (linted together as one set).
         dataset: PathBuf,
     },
+    /// Audit dataset faithfulness: verify every cited corpus span is
+    /// real source text in the corpus PDFs. Catches hallucinated /
+    /// invented span text — the primary reviewer attack on an
+    /// AI-authored benchmark. Exits 2 if any span is Missing (not found
+    /// verbatim or hyphen-insensitively), 0 otherwise.
+    AuditFaithfulness {
+        /// Path to a TOML eval dataset, or a directory of `*.toml`.
+        #[arg(long)]
+        dataset: PathBuf,
+        /// Corpus directory. PDFs are read from `<corpus>/labels/*.pdf`
+        /// (falling back to `<corpus>/*.pdf` if `labels/` has none).
+        #[arg(long)]
+        corpus: PathBuf,
+    },
     /// Print descriptive stats for a dataset: class balance, per-example
     /// shape, and what `inject` will materialize. Read-only; never fails
     /// on a parseable dataset.
@@ -220,6 +234,9 @@ fn real_main() -> Result<ExitCode> {
                 delay_ms,
             } => fetch_dailymed_command(&output, limit, delay_ms),
         },
+        Command::AuditFaithfulness { dataset, corpus } => {
+            audit_faithfulness_command(&dataset, &corpus)
+        }
         Command::Lint { dataset } => lint_command(&dataset),
         Command::Stats { dataset } => stats_command(&dataset),
         Command::Author {
@@ -253,6 +270,64 @@ fn author_command(
     let rendered = render_for_pdf(pdf, &options).context("rendering author template")?;
     print!("{rendered}");
     Ok(ExitCode::SUCCESS)
+}
+
+fn audit_faithfulness_command(
+    dataset_path: &std::path::Path,
+    corpus_dir: &std::path::Path,
+) -> Result<ExitCode> {
+    let dataset = load_dataset_path(dataset_path).context("loading dataset for audit")?;
+
+    let labels_dir = corpus_dir.join("labels");
+    let mut pdfs = collect_pdfs(&labels_dir)?;
+    if pdfs.is_empty() {
+        pdfs = collect_pdfs(corpus_dir)?;
+    }
+    if pdfs.is_empty() {
+        anyhow::bail!(
+            "no *.pdf files found under {} or {}",
+            labels_dir.display(),
+            corpus_dir.display()
+        );
+    }
+    pdfs.sort();
+
+    let mut raw = String::new();
+    for pdf in &pdfs {
+        let pages = evidence_core::ingest::pdf::extract(pdf)
+            .with_context(|| format!("extracting {}", pdf.display()))?;
+        for page in &pages {
+            raw.push_str(&page.raw_text);
+            raw.push(' ');
+        }
+    }
+    let corpus_norm = normalize(&raw);
+
+    print!("{}", audit_report(&dataset, &corpus_norm));
+
+    if has_missing(&dataset, &corpus_norm) {
+        Ok(ExitCode::from(2))
+    } else {
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
+/// Collect every `*.pdf` directly under `dir` (non-recursive). Returns an
+/// empty vec if `dir` is missing or not a directory.
+fn collect_pdfs(dir: &std::path::Path) -> Result<Vec<PathBuf>> {
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for entry in
+        std::fs::read_dir(dir).with_context(|| format!("reading directory {}", dir.display()))?
+    {
+        let path = entry?.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("pdf") {
+            out.push(path);
+        }
+    }
+    Ok(out)
 }
 
 fn lint_command(dataset_path: &std::path::Path) -> Result<ExitCode> {

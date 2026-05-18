@@ -1,13 +1,6 @@
 # Three Rules for a Citation: Decomposing Faithfulness in Retrieval-Augmented Generation — DRAFT
 
-> **Status: machine-assembled full draft for the author to revise.**
-> §5 numbers are final and reproducible; §1–§4, §6, §7 are scaffold
-> prose built from `CLAIMS.md` / `OUTLINE.md` / `EVAL.md` / the
-> validator source. Voice, tightening, and citation formatting are the
-> author's. Detailed §5 prose lives in `section5-results.draft.md`;
-> this file carries a condensed §5 with pointers so the whole arc reads
-> in one place. Numbers reflect the **v2** benchmark (254 seeds →
-> 1,270 examples); do not revert to the outline's stale "300".
+> **DRAFT — not for submission as-is.** The author must finalize voice and re-verify every number against the source tables (`rule-metrics.md`, `nli-comparison.md`, `benchmark-results.md`) before any external use.
 
 ---
 
@@ -22,16 +15,24 @@ whether the cited span **exists** in the corpus, whether it was
 query), and whether it **supports** the claim. We externalize all
 three as validator gates that refuse output, and build a benchmark of
 254 FDA-drug-label seed examples expanded to 1,270 via named
-matched-pair failure-injection operators. The structural rules
-(existence, in-context) are exact and model-independent (F1 = 1.000);
-the three rules catch perfectly disjoint classes of error (100%
-non-overlap); and the composed validator improves should-refuse F1 by
-+56 points over the strongest non-composed baseline. The semantic
-support gate, measured separately, catches genuine failures at 0.99
-recall but a strong NLI model still conservatively over-refuses true
-claims — a finding we measure rather than hide, and which motivates
-treating support as its own refuse-or-resolve gate. We release the
-system, the benchmark, and one-command reproduction.
+matched-pair failure-injection operators. On the v2 injected FDA-label
+benchmark the structural rules (existence, in-context) are exact and
+model-independent (F1 = 1.000); the three rules catch fully disjoint
+classes of error (100% by the operational blindness measure); and the
+composed validator improves should-refuse F1 by +56 points over the
+best non-composed baseline. The semantic support gate, measured
+separately, catches genuine failures at 0.99 recall but a strong NLI
+model still conservatively over-refuses true claims — a finding we
+measure rather than hide, and which motivates treating support as its
+own refuse-or-resolve gate. We release the system, the benchmark, and
+one-command reproduction.
+
+**Scope.** All results are on a controlled, failure-injected,
+single-domain (FDA drug-label) benchmark; they characterize validator
+behavior under matched-pair injected failures, not real-world failure
+prevalence. Structural rules (existence, in-context) are exact and
+model-independent; the support gate is a conservative, high-recall
+safety gate, not a high-precision throughput filter.
 
 ---
 
@@ -59,11 +60,13 @@ reasoning).
 existence, in-context, and support, and externalize each as a
 validator gate that refuses rather than degrades. (ii) We build a
 public FDA-drug-label benchmark with controlled, named matched-pair
-failure injection (254 seeds → 1,270 labeled examples). (iii) We show
-the three rules catch **non-overlapping** classes of error (100%
-disjoint on the benchmark) and that the composed validator improves
-should-refuse F1 by **+56 points** over the strongest non-composed
-baseline; the structural rules are exact and model-independent.
+failure injection (254 seeds → 1,270 labeled examples). (iii) We show,
+under matched-pair failure injection, that the three rules catch
+**non-overlapping** classes of error (fully disjoint on the v2 injected
+FDA-label benchmark, 100% by the operational blindness measure) and
+that the composed validator improves should-refuse F1 by **+56 points**
+over the best non-composed baseline; the structural rules are exact and
+model-independent.
 
 §2 places the work; §3 defines the rules; §4 the benchmark; §5 the
 experiments; §6 limitations; §7 conclusion.
@@ -103,6 +106,10 @@ errors. (Full matrix: `related-work-table.md`.)
 
 ## 3. The three rules
 
+### 3.0 Formal definitions
+
+Let C be the corpus of spans. For a query q, let R_q ⊆ C be the retrieval set the model was shown. Let s be a cited span and y the claim sentence. The three gates: exists(s, C) ≡ s ∈ C; in_context(s, R_q) ≡ s ∈ R_q; supports(s, y) ≡ NLI(text(s), y) = entailment. The validator accepts the citation (s, y) iff exists ∧ in_context ∧ supports, and otherwise refuses with the typed reason of the first failing gate. in_context establishes that s was *available* to the model, not that the model *used* it (see Scope of the claim, below).
+
 **3.1 Existence.** The cited identifier must resolve to a real span in
 the corpus. Failure: a fabricated pointer into nothing. Implementation:
 a primary-key lookup, O(1), deterministic.
@@ -123,7 +130,7 @@ existence, then in-context, then support — so each cleanly attributes
 one failure class (a class is owned by the first gate that can see it).
 Support aggregation is **strict-wins**: any contradiction wins, else
 any neutral wins, else support. "Every cited span must hold on its own"
-is the stronger safety claim; a concatenated-evidence alternative is
+is a conservative safety stance; a concatenated-evidence alternative is
 noted as future work, not shipped.
 
 **3.5 Validator output and deployment.** Refusal types: `Uncited`,
@@ -132,6 +139,10 @@ noted as future work, not shipped.
 — never silently degrade. A conservative gate is the correct default
 when the cost of a confidently-wrong citation is high (the target
 domain is pharmaceutical text).
+
+### Scope of the claim: citation correctness, not causal faithfulness
+
+We validate citation *correctness* at the output boundary. The in-context gate verifies the cited span was in the retrieval set the model was shown; it does **not** verify the model causally relied on that span — a model can post-rationalize a well-formed citation. Causal reliance (counterfactual span removal, attribution tracing) is a distinct fourth dimension, explicitly out of scope. This boundary is deliberate: existence, in-context, and support are checkable at the validator without model internals; causal faithfulness is not. Recent work separates citation correctness from faithfulness and reports substantial post-rationalization; our claims are confined to correctness.
 
 ## 4. Benchmark
 
@@ -193,18 +204,24 @@ DeBERTa-v3-MNLI.
   gap is the §5.1 conservatism, not a missed failure).
 - **§5.3 Non-overlap** (the kernel): out-of-context accepted by
   existence-only 254/254 (100%); support failures accepted by two-gate
-  508/508 (100%). **100% disjoint** — each failure class is invisible
-  to the rules preceding its gate.
+  508/508 (100%). **Fully disjoint on the injected benchmark (100% by
+  the operational blindness measure)** — each failure class is
+  *invisible* to the rules preceding its gate. This is a measured
+  blindness property (OOC failures are invisible to the existence gate;
+  support failures are invisible to the two-gate policy), an empirical
+  property of the data — *not* an artifact of the nested-policy
+  construction.
 - **§5.4 Composition**: F1 ladder 0.000 → 0.400 → 0.667 → **0.963**;
-  **additive lift +56.3 points** over the strongest non-composed
-  baseline (conservative lower bound — nested policies).
+  **additive lift +56.3 points** over the best non-composed baseline
+  (conservative lower bound — nested policies).
 - **§5.5 ALCE comparison `[OPEN]`**, **§5.6 natural-failure `[OPEN]`**,
   **§5.7 cost `[OPEN]`** — not yet run; no fabricated numbers.
 
 The decomposition is justified iff each rule isolates its class and the
-rules don't overlap; both hold with hard numbers. The structural core
-is exact and model-independent; the one soft number is the
-separately-measured support-gate conservatism.
+rules don't overlap; both hold on the v2 injected FDA-label benchmark
+with hard numbers. The structural core is exact and model-independent;
+the one soft number is the separately-measured support-gate
+conservatism.
 
 ## 6. Limitations
 
@@ -225,14 +242,21 @@ separately-measured support-gate conservatism.
   not yet run.
 - **No human-factors claim.** We do not measure user trust or
   downstream decision quality.
+- We measure citation *correctness*, not causal citation faithfulness;
+  the in-context gate proves availability, not reliance
+  (post-rationalization is possible). This is scoped explicitly in §3.
+- Headline F1/lift numbers come from a class-balanced injected set where
+  failures are prevalent; real RAG has lower failure prevalence where
+  false-refusal cost dominates. We report the support gate's
+  false-refusal rate explicitly rather than optimize it away.
 
 ## 7. Conclusion and future work
 
 Citation correctness decomposes into three operationally independent
-rules; on a controlled FDA-label benchmark the structural rules are
-exact and model-independent, the rules catch perfectly disjoint error
-classes, and the composition beats the best single rule by a wide
-margin. The semantic support gate is the open frontier: it catches
+rules; on the v2 injected FDA-label benchmark the structural rules are
+exact and model-independent, the rules catch fully disjoint error
+classes (100% by the operational blindness measure), and the
+composition beats the best single rule by a wide margin. The semantic support gate is the open frontier: it catches
 real failures but is conservative, which we measure rather than hide.
 Future work: (1) larger, cross-domain, human-curated benchmark;
 (2) clause-level support decomposition (FActScore-style) to attack the

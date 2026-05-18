@@ -62,8 +62,9 @@ The `OutOfContext` row is the load-bearing one: existence-only accepts
 all 10 (the cited span *does* exist), and only the in-context gate
 refuses them. Likewise the support classes survive every gate until
 gate 3. No class is caught by two different marginal gates → the gates
-partition the failure space. This is the §5.3 non-overlap claim,
-demonstrated structurally.
+partition the failure space on this bootstrap set. This is the §5.3
+non-overlap claim, demonstrated structurally (bootstrap set, not the
+FDA-label benchmark; not real-world failure prevalence).
 
 ---
 
@@ -148,11 +149,11 @@ again the NLI false-refusal-on-valid, and this example pins the
 So the false-refusal is the product of *two* compounding factors, both
 real and both paper-relevant: a weak NLI model **and** conservative
 strict-wins aggregation. It is not an authoring artifact — the example
-is genuinely valid. This is the strongest single motivation yet for the
+is genuinely valid. This is a clear motivation for the
 §5.1 DeBERTa-v3-large upgrade, and it surfaces a §3.4 design question:
 per-span strict-wins vs. concatenated-evidence aggregation. We keep
-strict-wins (conservative; "every citation must hold on its own" is the
-stronger safety claim) and note concatenated-evidence as future work.
+strict-wins (conservative; "every citation must hold on its own" is a
+stricter safety claim) and note concatenated-evidence as future work.
 
 Reproduce: see [`docs/EVAL.md`](../EVAL.md) "Authoring the benchmark".
 

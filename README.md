@@ -6,7 +6,7 @@
 
 **Auditable, local-first AI research assistant.** Drop a PDF in, ask a question, and every sentence in the answer is hyperlinked to the exact span on the exact page. If the model can't cite, it refuses to answer.
 
-> Status: `v0.1.0` shipped. Headless CLI is feature-complete; desktop UI is the `v0.3.0` milestone.
+> Status: headless CLI, the public eval harness, the FDA-label benchmark, and the Tauri desktop app (PDF viewer + chat) are all shipped. Findings are supported on the controlled v2 injected FDA-label benchmark; they are not real-world prevalence rates.
 
 ## Quickstart
 
@@ -57,15 +57,39 @@ PDF → page → spans → chunks → (BM25 + vector) retrieval → rerank
 
 Full design: [`docs/DESIGN.md`](docs/DESIGN.md).
 
-## Roadmap
+## What works today
 
-| Milestone | Scope | Status |
+The validator is a three-gate decomposition, all three gates shipped and exercised by the eval harness:
+
+1. **Existence** — the cited span ID resolves to a row in the database.
+2. **In-context** — the cited span was in the prompt's chunk set for *this* query.
+3. **Entailment** — a real NLI cross-encoder (`NliCrossEncoder`, `crates/evidence-core/src/query/nli.rs`) classifies `(cited span, sentence)` and the verdict must be `Supports`.
+
+| Capability | Where | Status |
 | --- | --- | --- |
-| [`v0.1.0`](https://github.com/Bilalsabry/evidence/releases/tag/v0.1.0) | Headless ingest + hybrid retrieval + naive citations (CLI) | ✅ Shipped |
-| `v0.2.0` | Cross-encoder reranker + NLI-based citation lexical-support check | Planned |
-| `v0.3.0` | Tauri desktop UI with PDF viewer + citation chips | Planned |
-| `v0.5.0` | Public eval harness + benchmarks | Planned |
-| `v1.0.0` | Signed cross-platform releases, docs site | Planned |
+| Headless ingest + hybrid (BM25 + vector) retrieval + span-level citations | `evidence-cli`, `evidence-core` | ✅ Shipped |
+| NLI-backed support gate (`distilbert-base-uncased-mnli` default; DeBERTa-v3 selectable via `--nli-model`) | `evidence-core/src/query/nli.rs` | ✅ Shipped |
+| Public eval harness — `run` / `inject` / `lint` / `stats` / `author` / `fetch` / `compare` / `metrics` / `audit-faithfulness` subcommands | `crates/evidence-eval` | ✅ Shipped |
+| FDA drug-label benchmark (v2): 254 hand-shaped `valid` seeds → 1,270 matched-pair injected examples | `docs/paper/fda_label_bench_PROVENANCE.md`, `benchmark-results.md` | ✅ Shipped |
+| Per-rule + composition results (§5.1–§5.4) | `docs/paper/section5-results.draft.md`, `rule-metrics.md`, `nli-comparison.md` | ✅ Shipped |
+| Tauri desktop app — library view, PDF viewer, chat panel, ingest | `apps/desktop` | ✅ Shipped |
+
+Headline results, supported on the controlled v2 injected FDA-label benchmark (not real-world prevalence):
+
+- **Existence and in-context rules are exact** on the injected set: precision 1.000 / recall 1.000 for their owned classes (§5.2, `rule-metrics.md`). These two rules are model-independent.
+- **The support rule recalls 0.992** of genuine support failures; its precision (0.873) is bounded by conservative NLI false-refusals, not a flaw in the decomposition (§5.2).
+- **The three error classes are fully disjoint on the injected benchmark (100% by the operational blindness measure):** no failure is caught by a rule other than the one that owns it (§5.3, `docs/paper/CLAIMS.md`). The decomposition holds on the controlled benchmark.
+- The composed validator improves should-refuse F1 by **+56.3 points** over the strongest *available* single-rule baseline (§5.4).
+
+### Open / future work
+
+These are genuinely not done and are not claimed:
+
+- **Natural-failure study** (§5.6) — real LLM hallucinations with no injection, on a held-out corpus. Not yet run; this is the practical-prevalence claim and is explicitly out of scope of the current numbers.
+- **ALCE comparison** (§5.5) — translating an ALCE subset into this framework. Not yet run.
+- **Cross-domain** — the benchmark is single-domain (FDA labels). Generalization beyond it is unmeasured.
+- **Clause-level decomposition / paraphrase tolerance** — splitting multi-claim sentences and a stronger checkpoint for near-paraphrases; noted as open work in [`docs/EVAL.md`](docs/EVAL.md).
+- Signed cross-platform desktop releases and a docs site (`v1.0.0`).
 
 ## Architecture at a glance
 
@@ -75,8 +99,10 @@ Full design: [`docs/DESIGN.md`](docs/DESIGN.md).
 | Storage | `evidence-core` | SQLite with `STRICT` tables, FTS5 (BM25), and `sqlite-vec` (`vec0`, 384-dim). Numbered migrations driven by `user_version`. |
 | Retrieval | `evidence-core` | BM25 + `vec0` KNN, fused with Reciprocal Rank Fusion (`k_rrf = 60`). Natural-language input is sanitized into a safe FTS5 expression. |
 | Embedding | `evidence-core` | `bge-small-en-v1.5` via `fastembed` (model auto-downloaded). |
-| Query | `evidence-core` | `LlmBackend` trait + in-tree `testing::*Backend` impls. Validator rejects uncited / out-of-context citations. |
+| Query | `evidence-core` | `LlmBackend` trait + in-tree `testing::*Backend` impls. Validator rejects uncited / out-of-context / unentailed citations (real NLI cross-encoder for the entailment gate). |
 | CLI | `evidence-cli` | `clap` v4. `OllamaBackend` over HTTP with `format: "json"`. |
+| Eval | `evidence-eval` | Harness with `run`/`inject`/`lint`/`stats`/`author`/`fetch`/`compare`/`metrics`/`audit-faithfulness`. See [`docs/EVAL.md`](docs/EVAL.md). |
+| Desktop | `apps/desktop` | Tauri 2 shell: library view, PDF viewer, chat panel, ingest. Excluded from default build graph; opt in with `cargo build -p evidence-desktop`. |
 
 ## Build
 

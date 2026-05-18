@@ -1,14 +1,13 @@
 # §5 Experiments — DRAFT
 
-> **Status: machine-drafted from the final in-repo numbers, for the
-> author to revise.** Every figure here is produced by a tested,
-> reproducible tool (`evidence-eval metrics` / `compare` / `run`) and
-> traces to a committed artifact (`rule-metrics.md`,
-> `nli-comparison.md`, `benchmark-results.md`,
-> `fda_label_bench_PROVENANCE.md`). Subsections **5.5–5.7 are not yet
-> run** and are marked `[OPEN]` — do not publish them as written.
-> Prose is a starting point, not final; tighten, re-voice, and verify
-> against the source tables before submission.
+> **DRAFT — not for submission as-is.** Author must finalize voice and
+> re-verify every number against the source tables before any external
+> use. Every figure here is produced by a tested, reproducible tool
+> (`evidence-eval metrics` / `compare` / `run`) and traces to a
+> committed artifact (`rule-metrics.md`, `nli-comparison.md`,
+> `benchmark-results.md`, `fda_label_bench_PROVENANCE.md`).
+> Subsections **5.5–5.7 are not yet run** and are marked `[OPEN]` — do
+> not publish them as written.
 
 ## 5.0 Benchmark construction and audit
 
@@ -77,10 +76,11 @@ the class it owns as the positive label.
 | in-context | out_of_context | 1.000 | 1.000 | **1.000** |
 | support | unsupported + contradicted | 0.873 | 0.992 | 0.929 |
 
-Existence and in-context are exact: every fabricated span is caught at
-the existence gate and every out-of-context citation at the in-context
-gate, with no false positives and no misses. These two results are
-model-independent. The support rule recalls 0.992 of genuine support
+On the v2 injected FDA-label benchmark (not real-world failure
+prevalence), existence and in-context are exact: every fabricated span
+is caught at the existence gate and every out-of-context citation at
+the in-context gate, with no false positives and no misses. These two
+results are model-independent. The support rule recalls 0.992 of genuine support
 failures (it does not *miss* bad citations); its F1 is bounded by
 precision 0.873, where the 73 false positives are valid claims the NLI
 checkpoint conservatively refuses. That precision figure is the §5.1
@@ -99,9 +99,17 @@ visible to the rules that precede its owning gate.
   **508 / 508 (100%)** — rules 1 and 2 are entirely blind to support
   errors.
 
-The error classes are perfectly disjoint: no failure is caught by a
-rule other than the one that owns it. The decomposition is therefore
-not a partition of convenience; the rules address independent failure
+The error classes are fully disjoint on the injected benchmark (100%
+by the operational blindness measure): no failure is caught by a rule
+other than the one that owns it. This is a *measured blindness
+property*, not an artifact of the nested-policy construction —
+out-of-context citations are invisible to existence-only because the
+cited span genuinely exists, and support failures are invisible to
+two-gate because the span exists and is in context; each gate is
+blind to the others' classes by what it checks, not by how the
+policies are layered. On the v2 injected FDA-label benchmark (not
+real-world failure prevalence) the decomposition is therefore not a
+partition of convenience; the rules address independent failure
 modes, and omitting any one leaves its class entirely undetected.
 
 ## 5.4 Composition and ablation
@@ -119,9 +127,11 @@ injected set:
 The ladder is monotone and each gate contributes a large increment;
 recall roughly doubles as each rule is added (0.25 → 0.50 → 0.996)
 while precision stays 1.000 through two-gate and dips only to 0.933 at
-three-gate (the §5.1 false-refusals). The composed validator improves
-should-refuse F1 by **+56.3 points** over the strongest non-composed
-baseline (existence-only). Because the policy stack is nested, only
+three-gate (the §5.1 false-refusals). On the v2 injected FDA-label
+benchmark (not real-world failure prevalence) the composed validator
+improves should-refuse F1 by **+56.3 points** over the best
+non-composed baseline (existence-only). Because the policy stack is
+nested, only
 `vanilla` and `existence_only` are genuinely single-rule; in-context-
 alone and support-alone are not isolable, so this baseline is the
 strongest *available* single rule — a conservative choice that makes
