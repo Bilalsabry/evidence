@@ -13,23 +13,22 @@ When a retrieval-augmented language model answers a question, it
 attaches citations: "this sentence is supported by source span #42."
 The field treats "is this citation correct?" as a single yes/no
 signal. We argue it is not one question but **three independent
-questions**, and that conflating them hides which thing actually broke.
-The three questions are: (1) **does the cited span exist** in the
-corpus at all; (2) **was it in the set the model was actually shown**
-for this query; (3) **does it actually support the claim**. We built a
-local-first system (`evidence`) that validates all three at the
-boundary where output is emitted, a benchmark of 254 FDA-drug-label
-examples expanded to 1,270 with controlled failure injection, and an
-evaluation harness that measures each rule in isolation. On the v2
-injected FDA-label benchmark (not real-world prevalence): the first
-two rules are *exact* and *model-independent*, the three rules catch
-**fully disjoint** classes of error (100% by the operational
-blindness measure on the injected benchmark), and the composed
-validator beats the best single rule by **+56 F1
-points**. The third rule (semantic support) is the soft one — it
-catches real failures at 99% recall but a weak NLI model
-over-refuses ~30–50% of true claims, which is itself a measured,
-separately-argued finding rather than a flaw in the decomposition.
+questions**, and that conflating them hides which thing actually broke:
+(1) **does the cited span exist** in the corpus at all; (2) **was it in
+the set the model was actually shown** for this query; (3) **does it
+actually support the claim**. We built a local-first system
+(`evidence`) that validates all three at the boundary where output is
+emitted, a benchmark of 254 FDA-drug-label examples expanded to 1,270
+with controlled failure injection, and an evaluation harness that
+measures each rule in isolation. On the v2 injected FDA-label benchmark
+(not real-world prevalence) the first two rules are *exact* and
+*model-independent*, the three rules catch **fully disjoint** classes
+of error (100% by the operational blindness measure), and the composed
+validator beats the best single rule by **+56 F1 points**. The third
+rule (semantic support) is the soft one — it catches real failures at
+99% recall but a weak NLI model over-refuses ~30–50% of true claims, a
+measured, separately-argued finding rather than a flaw in the
+decomposition.
 
 ---
 
@@ -71,16 +70,16 @@ construction* — citations are restricted to integer markers into the
 retrieved set, so existence and in-context are true by data shape and
 cannot be measured. GopherCite forces rules 1–2 by constrained
 decoding. Self-RAG has separate reflection tokens for retrieval
-relevance and support but they are trained *inside* the model, not
-externalized validator gates that can refuse output, and neither
-addresses "was this span in the prompt for this query."
+relevance and support, but they are trained *inside* the model rather
+than externalized as validator gates that can refuse output, and none
+of these addresses "was this span in the prompt for this query."
 
 The consequence for a practitioner: when a single faithfulness score is
 low, you cannot tell whether the model is hallucinating span IDs (a
-decoding/format problem), citing things it wasn't shown (a retrieval-
-context problem), or citing real context that doesn't support the
-claim (a reasoning/NLI problem). These have completely different fixes.
-A decomposed signal tells you which lever to pull.
+decoding/format problem), citing things it wasn't shown (a
+retrieval-context problem), or citing real context that doesn't support
+the claim (a reasoning/NLI problem). These have completely different
+fixes; a decomposed signal tells you which lever to pull.
 
 ### 2.3 The thesis
 
@@ -102,9 +101,9 @@ in-context gate verifies the cited span was in the retrieval set the
 model was shown; it does NOT verify the model causally relied on that
 span when generating the sentence — a model can post-rationalize a
 well-formed citation. Causal reliance (counterfactual span removal,
-attribution tracing) is a distinct fourth dimension and is explicitly
-out of scope. This boundary is deliberate: existence, in-context, and
-support are checkable at the validator without model internals; causal
+attribution tracing) is a distinct fourth dimension, explicitly out of
+scope. This boundary is deliberate: existence, in-context, and support
+are checkable at the validator without model internals; causal
 faithfulness is not. Recent work separates citation correctness from
 faithfulness and reports substantial post-rationalization; our claims
 are confined to correctness.
@@ -132,11 +131,11 @@ Rust multi-crate Cargo workspace:
   viewer (span-level highlighting) and a chat panel with clickable
   citation chips.
 
-The validator is the heart. It is a `ValidationPolicy` that runs the
-three gates **in order — existence, then in-context, then support** —
-at the point of output. Gate ordering matters: each gate cleanly owns
-one failure class only because it runs after the cheaper structural
-checks have already removed their classes.
+The validator is the heart: a `ValidationPolicy` that runs the three
+gates **in order — existence, then in-context, then support** — at the
+point of output. Ordering matters: each gate cleanly owns one failure
+class only because it runs after the cheaper structural checks have
+already removed their classes.
 
 ### 3.1 The three gates as code
 
@@ -154,9 +153,9 @@ checks have already removed their classes.
   "every citation must hold on its own" is the stronger safety claim.
 
 The deployment philosophy is **refuse-or-resolve**: if any gate fails,
-the system does not emit the unsupported claim; it refuses (or resolves
-by re-retrieving). A conservative gate is the correct default when the
-cost of a confidently-wrong pharmaceutical citation is high.
+the system does not emit the unsupported claim — it refuses, or
+resolves by re-retrieving. A conservative gate is the correct default
+when the cost of a confidently-wrong pharmaceutical citation is high.
 
 ---
 
@@ -166,10 +165,10 @@ cost of a confidently-wrong pharmaceutical citation is high.
 
 50 public-domain FDA drug-label PDFs fetched from DailyMed (the FDA's
 Structured Product Labeling service) via `evidence-eval fetch
-dailymed`. Idempotent download, manifest with per-file SHA-256. Drug
-labels are an ideal domain: high-stakes, factual, full of crisp
-quantitative claims (doses, concentrations, contraindications) and they
-are public domain so the benchmark can ship.
+dailymed`: idempotent download, manifest with per-file SHA-256. Drug
+labels are an ideal domain — high-stakes, factual, full of crisp
+quantitative claims (doses, concentrations, contraindications), and
+public domain so the benchmark can ship.
 
 ### 4.2 The example format
 
@@ -206,7 +205,7 @@ not hand-cherry-picked):
 
 254 valid seeds → 1,270 examples (254 valid + 1,016 injected). The
 matched-pair design is the defense against the "your failures are too
-easy" reviewer attack: each failure differs from a true example by
+easy" reviewer objection: each failure differs from a true example by
 exactly one controlled edit.
 
 ### 4.4 The harness and the policy ladder
@@ -229,8 +228,8 @@ the class predicts. The harness has two support modes:
 
 ### 4.5 The benchmark-authoring honesty story (important)
 
-This is a methodological point the paper keeps on record because it
-makes the rest of the numbers trustworthy.
+The paper keeps this methodological point on record because it makes
+the rest of the numbers trustworthy.
 
 The seeds were AI-assisted-authored at scale (parallel agents over the
 50 labels). The **first** benchmark (v1, 263 seeds) showed a 49%
@@ -241,7 +240,7 @@ a model property**: the PDF span extractor emits *line-level* spans,
 label sentences wrap across lines, and the v1 authoring guideline
 ("cite minimally, one span") made the agents cite a sentence
 *fragment* — e.g. a cited span reading `"Doxycycline is virtually
-completely"` while the operative word *absorbed* was in the next,
+completely"` while the operative word *absorbed* sat in the next,
 uncited line. Both a weak and a strong NLI model **correctly** refuse
 to entail a sentence from a fragment.
 
@@ -249,8 +248,8 @@ We corrected the guideline (the cited span must be one complete,
 self-contained sentence, with wrapped lines merged), re-authored all
 seeds (v2, 254 seeds), and re-ran. The 49% decomposed into ~15 points
 of fixed benchmark bug and ~29% genuine NLI conservatism. Catching this
-by audit, rather than shipping it, is part of the evidence base, and
-the v1→v2 delta is recorded in `benchmark-results.md`. The honest
+by audit rather than shipping it is part of the evidence base; the
+v1→v2 delta is recorded in `benchmark-results.md`. The honest
 provenance (AI-authored, spot-audited, not exhaustively human-verified)
 is in `fda_label_bench_PROVENANCE.md`.
 
@@ -310,12 +309,12 @@ precede its owning gate?
 blindness measure).** This is a measured *blindness* property — each
 preceding gate is structurally unable to see the next class — not an
 artifact of the policies being nested. No failure is caught by a rule
-other than the one that owns it. The three rules are not redundant
-re-measurements of one signal; they address independent failure modes.
-Omitting any rule leaves its entire class undetected. This is a clean
-form of the paper's thesis on this benchmark; it holds on the v2
-injected FDA-label benchmark, not real-world prevalence. (Target in
-CLAIMS.md was ≥80%; actual 100%.)
+other than the one that owns it; the three rules are not redundant
+re-measurements of one signal but address independent failure modes,
+and omitting any rule leaves its entire class undetected. This is a
+clean form of the paper's thesis, holding on the v2 injected FDA-label
+benchmark, not real-world prevalence. (CLAIMS.md target ≥80%; actual
+100%.)
 
 ### 5.4 Composition and additive lift — `rule-metrics.md`
 
@@ -330,24 +329,23 @@ Each policy as a binary should-refuse classifier:
 
 Monotone ladder, recall ~doubling per gate. **Additive lift: +56.3 F1
 points** for the composed validator over the strongest non-composed
-baseline (existence-only). Target was ≥10; far exceeded. (Honest note:
+baseline (existence-only); target was ≥10, far exceeded. (Honest note:
 the policies are nested, so only vanilla and existence-only are
 genuinely single-rule; the baseline is the strongest *available* single
 rule — a conservative, lower-bound choice.)
 
 ### 5.5 What the numbers mean together
 
-- The paper's contribution (the decomposition) is supported on the
-  controlled injected benchmark iff each rule isolates its class
-  **and** the rules don't overlap. Both hold there, with hard numbers:
-  §5.2 (isolation) + §5.3 (100% disjoint on the injected benchmark).
-- The structural rules (1, 2) are *exact* and *model-independent*. This
-  is the safe, unattackable core.
+- The contribution (the decomposition) holds on the controlled
+  injected benchmark iff each rule isolates its class **and** the rules
+  don't overlap. Both hold there, with hard numbers: §5.2 (isolation) +
+  §5.3 (100% disjoint).
+- The structural rules (1, 2) are *exact* and *model-independent* — the
+  safe, unattackable core.
 - The one soft number (support precision 0.873) is **not** a hole in
   the decomposition — it is the §5.1 NLI-conservatism finding, measured
-  and argued separately. The paper's honest framing leads with the
-  perfect structural result and presents support as the open,
-  conservative third gate.
+  and argued separately. The honest framing leads with the structural
+  result and presents support as the open, conservative third gate.
 
 ---
 
@@ -364,7 +362,7 @@ Four CLAIMS.md empirical claims; three resolved, one open:
 | Claim 4 natural-failure agreement | ⬜ **open** |
 
 - **Claim 4 (natural-failure run).** The benchmark uses *injected*
-  failures. The defense against "injected failures are too easy" is a
+  failures; the defense against "injected failures are too easy" is a
   run on *real* LLM hallucinations (no injection), human-graded. This
   requires a held-out corpus, a chosen generation model, and human
   labeling — a methodological decision and a human effort, deliberately
@@ -385,7 +383,7 @@ Four CLAIMS.md empirical claims; three resolved, one open:
   depend on this, but the support-gate numbers' authoring homogeneity
   is a fair reviewer question. The datasheet
   (`fda_label_bench_PROVENANCE.md`) pre-empts it; a human curation pass
-  + explicit disclosure is the conservative path.
+  plus explicit disclosure is the conservative path.
 
 ---
 
@@ -415,7 +413,7 @@ evidence-eval run /tmp/fda_injected.toml --real-nli
 ```
 
 The structural rules (1, 2) reproduce identically in mock mode (no
-model download). The support numbers require the NLI checkpoint
+model download); the support numbers require the NLI checkpoint
 download on first run.
 
 ---
@@ -428,8 +426,10 @@ download on first run.
 - `prior-art-reading.md`, `related-work-table.md` — the web-verified
   prior-art audit and the gap matrix (why this is novel).
 - `benchmark-results.md` — the v1→v2 audit story + full scoreboard.
-- `rule-metrics.md` — §5.2 / §5.3 / claim-3 numbers.
+- `rule-metrics.md` — §5.2 / §5.3 / claim-3 numbers (with 95% bootstrap CIs).
 - `nli-comparison.md` — §5.1 distilbert vs DeBERTa table.
+- `cost-latency.md` — §5.7 measured cost split (structural vs NLI).
+- `faithfulness-audit.md` — automated cited-span verbatim audit + manual verdicts.
 - `fda_label_bench_PROVENANCE.md` — the benchmark datasheet.
 - `section5-results.draft.md` — §5 results prose draft (for the
   author to finalize).
@@ -449,10 +449,10 @@ by the operational blindness measure), and composition beats the best
 single rule by +56 F1. Real-world prevalence and causal faithfulness
 are out of scope and open. The one soft spot — semantic support
 precision — is a measured, separately-argued property of the NLI
-model, not a crack in the idea, and it is exactly why the paper argues
+model, not a crack in the idea, and is exactly why the paper argues
 support must be its own gate with a refuse-or-resolve default. The
 remaining work (claim-4 natural-failure study, ALCE comparison, wider
 human audit, final prose) requires human judgment and real labeled
 data, not more tooling. Everything that could be built and measured
-rigorously on this benchmark, has been; every number is reproducible
+rigorously on this benchmark has been, and every number is reproducible
 from a single command.

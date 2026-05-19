@@ -6,26 +6,25 @@
 
 ## Abstract (draft)
 
-Retrieval-augmented generation systems attach citations to generated
-claims, and a large literature measures whether those citations are
-"correct" as a single signal. We argue that citation correctness is
-not one property but three operationally independent constraints:
+We decompose citation correctness, which a large literature scores as
+a single signal, into three operationally independent constraints:
 whether the cited span **exists** in the corpus, whether it was
 **in-context** (in the retrieval set the model was shown for this
-query), and whether it **supports** the claim. We externalize all
-three as validator gates that refuse output, and build a benchmark of
-254 FDA-drug-label seed examples expanded to 1,270 via named
-matched-pair failure-injection operators. On the v2 injected FDA-label
-benchmark the structural rules (existence, in-context) are exact and
-model-independent (F1 = 1.000); the three rules catch fully disjoint
-classes of error (100% by the operational blindness measure); and the
-composed validator improves should-refuse F1 by +56 points over the
-best non-composed baseline. The semantic support gate, measured
-separately, catches genuine failures at 0.99 recall but a strong NLI
-model still conservatively over-refuses true claims — a finding we
-measure rather than hide, and which motivates treating support as its
-own refuse-or-resolve gate. We release the system, the benchmark, and
-one-command reproduction.
+query), and whether it **supports** the claim. We externalize each as
+a validator gate that refuses output rather than degrading it, and
+build a benchmark of 254 FDA-drug-label seeds expanded to 1,270
+examples via named matched-pair failure-injection operators. On the v2
+injected FDA-label benchmark — a controlled benchmark, not a
+prevalence study — the structural rules (existence, in-context) are
+exact and model-independent (F1 = 1.000); the three rules catch fully
+disjoint classes of error (100% by the operational blindness measure);
+and the composed validator improves should-refuse F1 by +56 points
+over the best non-composed baseline. The semantic support gate,
+measured separately, catches genuine failures at 0.99 recall, but a
+strong NLI model still conservatively over-refuses true claims — a
+finding we measure rather than hide, and which motivates treating
+support as its own refuse-or-resolve gate. We release the system, the
+benchmark, and one-command reproduction.
 
 **Scope.** All results are on a controlled, failure-injected,
 single-domain (FDA drug-label) benchmark; they characterize validator
@@ -45,11 +44,11 @@ span is topically relevant — and the claim is false. Most existing
 attribution metrics score this as "cited with high relevance." That is
 the bug this paper is about.
 
-"Is this citation correct?" is treated as one signal. It is three. A
-citation is trustworthy only if (1) the cited span **exists**, (2) it
-was **in the context** the model was given for this query, and (3) it
-**supports** the claim. These fail independently: a fabricated span ID
-fails (1); a real span the model was never shown fails (2) while
+"Is this citation correct?" is treated as one signal, but it is three.
+A citation is trustworthy only if (1) the cited span **exists**, (2)
+it was **in the context** the model was given for this query, and (3)
+it **supports** the claim. These fail independently: a fabricated span
+ID fails (1); a real span the model was never shown fails (2) while
 passing (1); a real, shown, but irrelevant span passes (1) and (2) and
 fails (3). Conflating them into one score hides the practitioner's
 actual question — *which rule failed?* — and the three failures have
@@ -81,27 +80,32 @@ faithfulness signal but is orthogonal to the decomposition question.
 
 **RAG citation benchmarks.** ALCE (Gao et al. 2023), HAGRID (Kamalloo
 et al. 2023), and ExpertQA (Malaviya et al. 2024) measure support
-carefully but restrict citations to integer markers into the retrieved
-set — existence and in-context are true *by construction* and cannot be
-measured. These are the closest comparison points; an explicit
-translation experiment is future work (§5.5).
+carefully, but by restricting citations to integer markers into the
+retrieved set they make existence and in-context true *by construction*
+and therefore unmeasurable. These are the closest comparison points; an
+explicit translation experiment is future work (§5.5).
 
 **Span-level and constrained citing.** GopherCite (Menick et al. 2022)
-forces existence and in-context by constrained decoding rather than
-measuring them. Self-RAG (Asai et al. 2024) has separate reflection
-tokens for retrieval relevance and support, but they are trained inside
-the model rather than externalized validator gates, and neither
-addresses "was this span in the prompt for this query."
+*enforces* existence and in-context through constrained decoding rather
+than validating them post-hoc. Self-RAG (Asai et al. 2024) has
+reflection tokens for retrieval relevance and support, but these are
+internalized in the model rather than externalized as validator gates,
+and neither addresses "was this span in the prompt for this query."
 
 **Post-hoc and frameworks.** RARR (Gao et al. 2022) revises rather than
 refuses. RAGAS (Es et al. 2023) is a rule-based RAG-eval framework; we
 position the three-rule decomposition as the right granularity for
 RAGAS-style frameworks to adopt. Contrast-set methodology (Gardner et
-al. 2020) underwrites our named-operator failure injection.
+al. 2020) underwrites our named-operator failure injection. Recent work
+on citation faithfulness separates whether a citation is *correct* from
+whether the model causally relied on it, reporting substantial
+post-rationalization (cf. recent work on citation faithfulness /
+post-rationalization); our claims are confined to correctness (§3,
+Scope).
 
 **The gap.** To our knowledge no prior work separates existence,
 in-context, and support as independent failure modes with separate
-measurements, and none shows they catch distinct, non-overlapping
+measurements, nor shows that they catch distinct, non-overlapping
 errors. (Full matrix: `related-work-table.md`.)
 
 ## 3. The three rules
@@ -161,14 +165,14 @@ datasheet (`fda_label_bench_PROVENANCE.md`).
 
 **4.3 Verification and the v1→v2 audit.** Structural validity is
 machine-checked by `evidence-eval lint` (whole-corpus: 0 diagnostics).
-We report one methodological event because it bears on validity: an
+We report one methodological event because it bears on validity. An
 initial benchmark (v1) showed a 49% false-refusal rate on valid
-examples; a hand audit against source PDFs found the cause was an
+examples; a hand audit against source PDFs traced the cause to an
 authoring artifact (line-wrapped PDF spans cited as fragments), not a
-property of the validator. The guideline was corrected, seeds
-re-authored (v2), and the run repeated; the residual decomposed into
-~15 points fixed bug and ~29% genuine NLI conservatism. Catching this
-by audit is part of the evidence base (`benchmark-results.md`).
+property of the validator. We corrected the guideline, re-authored the
+seeds (v2), and repeated the run; the residual decomposed into ~15
+points fixed bug and ~29% genuine NLI conservatism. Catching this by
+audit is itself part of the evidence base (`benchmark-results.md`).
 
 **4.4 Failure injection (named operators, Gardner et al. 2020).** From
 each valid seed, `evidence-eval inject` derives labeled failures:
@@ -253,11 +257,13 @@ conservatism.
 ## 7. Conclusion and future work
 
 Citation correctness decomposes into three operationally independent
-rules; on the v2 injected FDA-label benchmark the structural rules are
-exact and model-independent, the rules catch fully disjoint error
+rules. On the v2 injected FDA-label benchmark — a controlled
+benchmark, not a real-world prevalence study — the structural rules
+are exact and model-independent, the rules catch fully disjoint error
 classes (100% by the operational blindness measure), and the
-composition beats the best single rule by a wide margin. The semantic support gate is the open frontier: it catches
-real failures but is conservative, which we measure rather than hide.
+composition beats the best single rule by a wide margin. The semantic
+support gate is the open frontier: it catches real failures but is
+conservative, which we measure rather than hide.
 Future work: (1) larger, cross-domain, human-curated benchmark;
 (2) clause-level support decomposition (FActScore-style) to attack the
 support-precision ceiling; (3) the natural-failure study (claim 4) and

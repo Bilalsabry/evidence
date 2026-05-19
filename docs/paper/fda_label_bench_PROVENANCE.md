@@ -56,14 +56,26 @@ operators.
 **Automated faithfulness audit.** `evidence-eval audit-faithfulness`
 checks every cited span verbatim against the source corpus. Result on
 v2 (`docs/paper/faithfulness-audit.md`): **249/255 exact, 1 fuzzy,
-5 flagged**. Manual verification of the flags: 4 are faithful real
-label text flagged only for bullet-glyph / line-merge / hyphen
-reconstruction; 1 (`cmc_eyedrops_storage`) is **unconfirmed and
-earmarked for removal or correction in the human pass**. The
-structural results (existence/in-context, non-overlap) do not depend
-on span text and are unaffected.
+5 flagged (missing)**, over 254 examples / 255 spans. Manual
+verification of all 6 flags against the source PDFs found **every
+flagged span is faithful real label text**, flagged only because the
+audit tool does not collapse interior whitespace or merge
+bullet-glyph / line-split / hyphen-break artifacts. In particular
+`cmc_eyedrops_storage` — previously unconfirmed — was located verbatim
+in its source label (`51a2d74f-…345a.pdf`, page 1, span id 1320:
+`"  Store between 15-30°C (59-86°F).   Keep carton for complete
+product information.\r\n"`). The earlier grep missed it only because
+the source has three interior spaces between the two sentences. The
+benchmark span is the prescribed single-spaced, CRLF-trimmed
+reconstruction of that line, so it was **kept and confirmed against
+source — not removed, and its text was already correct (no change
+needed)**. No fabricated or unverifiable spans remain. The structural
+results (existence/in-context, non-overlap) do not depend on span text
+and are unaffected.
 
 **Recommended use:** a strong scaffold benchmark with a documented
-audit trail. For publication, a wider human verification pass over the
-seeds (resolving the one unconfirmed span above) and disclosure of the
-AI-assisted authoring method is the conservative path.
+audit trail. The automated faithfulness flags have now all been
+manually resolved against source (no unconfirmed spans remain). For
+publication, a wider human verification pass over the seeds (semantic
+entailment, not just span faithfulness) and disclosure of the
+AI-assisted authoring method is still the conservative path.
