@@ -107,7 +107,99 @@ impl Prf {
     }
 }
 
+/// Tiny deterministic PRNG (SplitMix64). Inlined on purpose: the
+/// bootstrap must be seedable and reproducible without pulling a `rand`
+/// dependency into the eval crate. SplitMix64 is the standard seeder
+/// recommended alongside xoshiro — fast, full-period, good enough for
+/// resampling indices.
+struct SplitMix64 {
+    state: u64,
+}
+
+impl SplitMix64 {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform integer in `[0, n)`. `n` must be non-zero. Uses Lemire's
+    /// debiased multiply-shift so the resample is not modulo-skewed.
+    fn below(&mut self, n: usize) -> usize {
+        debug_assert!(n > 0, "below(0) is undefined");
+        let n = n as u64;
+        loop {
+            let x = self.next_u64();
+            let m = u128::from(x) * u128::from(n);
+            let lo = m as u64;
+            if lo >= n {
+                return (m >> 64) as usize;
+            }
+            // Rejection zone: re-roll until the low word clears the
+            // threshold so every bucket is equally likely.
+            let threshold = n.wrapping_neg() % n;
+            if lo >= threshold {
+                return (m >> 64) as usize;
+            }
+        }
+    }
+}
+
+/// 2.5 / 97.5 percentile interval of a sample, via the
+/// nearest-rank method on the sorted copy. Returns `(lo, hi)`.
+/// Empty input → `(0.0, 0.0)`.
+fn percentile_ci(samples: &[f64]) -> (f64, f64) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut s = samples.to_vec();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    (percentile(&s, 2.5), percentile(&s, 97.5))
+}
+
+/// Nearest-rank percentile of an already-sorted slice. `p` in [0, 100].
+fn percentile(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let n = sorted.len();
+    if n == 1 {
+        return sorted[0];
+    }
+    // Nearest-rank: rank = ceil(p/100 * n), clamped to [1, n].
+    let rank = (p / 100.0 * n as f64).ceil() as usize;
+    let idx = rank.clamp(1, n) - 1;
+    sorted[idx]
+}
+
+/// One bootstrap resample of `0..n` index positions, drawn with
+/// replacement. Deterministic given the PRNG state.
+fn resample_indices(rng: &mut SplitMix64, n: usize) -> Vec<usize> {
+    if n == 0 {
+        return Vec::new();
+    }
+    (0..n).map(|_| rng.below(n)).collect()
+}
+
+/// Number of bootstrap resamples for the §5 confidence intervals.
+const BOOTSTRAP_B: usize = 1000;
+/// Fixed seed so the CIs are reproducible across runs of the same data.
+const BOOTSTRAP_SEED: u64 = 0x5150_4143_4954_4900;
+
+/// Format a point estimate with its bootstrap 95% interval, e.g.
+/// `0.929 [0.91, 0.95]`.
+fn fmt_ci(point: f64, ci: (f64, f64)) -> String {
+    format!("{point:.3} [{:.2}, {:.2}]", ci.0, ci.1)
+}
+
 /// Per-example refusal state across the four nested policies.
+#[derive(Clone)]
 struct ExampleRow {
     class: HallucinationClass,
     refused: std::collections::HashMap<Policy, bool>,
@@ -154,6 +246,94 @@ fn policy_refusal_prf(ex: &[ExampleRow], p: Policy) -> Prf {
     m
 }
 
+/// Marginal-gate PRF for the three rules over an example set. Pulled
+/// out of `rule_metrics` so the bootstrap can recompute it on each
+/// resample. Returns (existence, in-context, support).
+fn rule_prfs(ex: &[ExampleRow]) -> (Prf, Prf, Prf) {
+    use HallucinationClass as C;
+    let mut existence = Prf {
+        tp: 0,
+        fp: 0,
+        fn_: 0,
+    };
+    let mut incontext = Prf {
+        tp: 0,
+        fp: 0,
+        fn_: 0,
+    };
+    let mut support = Prf {
+        tp: 0,
+        fp: 0,
+        fn_: 0,
+    };
+    for e in ex {
+        let r_exist = refused(e, Policy::ExistenceOnly);
+        let r_two = refused(e, Policy::TwoGate);
+        let r_three = refused(e, Policy::ThreeGate);
+        match (e.class == C::FabricatedSpan, r_exist) {
+            (true, true) => existence.tp += 1,
+            (true, false) => existence.fn_ += 1,
+            (false, true) => existence.fp += 1,
+            (false, false) => {}
+        }
+        if !r_exist {
+            match (e.class == C::OutOfContext, r_two) {
+                (true, true) => incontext.tp += 1,
+                (true, false) => incontext.fn_ += 1,
+                (false, true) => incontext.fp += 1,
+                (false, false) => {}
+            }
+        }
+        if !r_two {
+            let owned = matches!(e.class, C::Unsupported | C::Contradicted);
+            match (owned, r_three) {
+                (true, true) => support.tp += 1,
+                (true, false) => support.fn_ += 1,
+                (false, true) => support.fp += 1,
+                (false, false) => {}
+            }
+        }
+    }
+    (existence, incontext, support)
+}
+
+/// The four F1s the §5 bootstrap reports a CI for: per-rule
+/// (existence, in-context, support) marginal F1 plus the three-gate
+/// should-refuse F1 over the whole set.
+fn bootstrap_f1s(ex: &[ExampleRow]) -> [f64; 4] {
+    let (e, i, s) = rule_prfs(ex);
+    let three_gate = policy_refusal_prf(ex, Policy::ThreeGate).f1();
+    [e.f1(), i.f1(), s.f1(), three_gate]
+}
+
+/// 95% bootstrap CIs for the four §5 F1 statistics. Resamples the
+/// per-example list WITH REPLACEMENT `BOOTSTRAP_B` times under a fixed
+/// seed, recomputes all four F1s on each resample, and returns the
+/// 2.5/97.5 percentile interval for each. Deterministic.
+fn bootstrap_f1_cis(ex: &[ExampleRow]) -> [(f64, f64); 4] {
+    let mut rng = SplitMix64::new(BOOTSTRAP_SEED);
+    let mut draws: [Vec<f64>; 4] = [
+        Vec::with_capacity(BOOTSTRAP_B),
+        Vec::with_capacity(BOOTSTRAP_B),
+        Vec::with_capacity(BOOTSTRAP_B),
+        Vec::with_capacity(BOOTSTRAP_B),
+    ];
+    for _ in 0..BOOTSTRAP_B {
+        let idx = resample_indices(&mut rng, ex.len());
+        let sample: Vec<ExampleRow> = idx.iter().map(|&i| ex[i].clone()).collect();
+        let f1s = bootstrap_f1s(&sample);
+        for (k, v) in f1s.iter().enumerate() {
+            draws[k].push(*v);
+        }
+    }
+    [
+        percentile_ci(&draws[0]),
+        percentile_ci(&draws[1]),
+        percentile_ci(&draws[2]),
+        percentile_ci(&draws[3]),
+    ]
+}
+
 /// §5.2 + §5.3 metrics: per-rule marginal precision/recall/F1, and the
 /// non-overlap evidence (each failure class is invisible to the rules
 /// that precede its owning gate).
@@ -175,58 +355,16 @@ pub fn rule_metrics(rows: &[RunResult]) -> String {
     let ex = group_examples(rows);
 
     // --- §5.2 marginal PRF -------------------------------------------------
-    // Existence: detector = refused by ExistenceOnly; owned = FabricatedSpan.
-    let mut existence = Prf {
-        tp: 0,
-        fp: 0,
-        fn_: 0,
-    };
-    // In-context: among ExistenceOnly-accepted, refused by TwoGate; owned = OOC.
-    let mut incontext = Prf {
-        tp: 0,
-        fp: 0,
-        fn_: 0,
-    };
-    // Support: among TwoGate-accepted, refused by ThreeGate; owned =
-    // Unsupported + Contradicted.
-    let mut support = Prf {
-        tp: 0,
-        fp: 0,
-        fn_: 0,
-    };
+    // Existence: owned = FabricatedSpan. In-context: among
+    // ExistenceOnly-accepted, owned = OOC. Support: among
+    // TwoGate-accepted, owned = Unsupported + Contradicted.
+    let (existence, incontext, support) = rule_prfs(&ex);
 
-    for e in &ex {
-        let r_exist = refused(e, Policy::ExistenceOnly);
-        let r_two = refused(e, Policy::TwoGate);
-        let r_three = refused(e, Policy::ThreeGate);
-
-        // existence over all examples
-        match (e.class == C::FabricatedSpan, r_exist) {
-            (true, true) => existence.tp += 1,
-            (true, false) => existence.fn_ += 1,
-            (false, true) => existence.fp += 1,
-            (false, false) => {}
-        }
-        // in-context: marginal, only where existence did not already fire
-        if !r_exist {
-            match (e.class == C::OutOfContext, r_two) {
-                (true, true) => incontext.tp += 1,
-                (true, false) => incontext.fn_ += 1,
-                (false, true) => incontext.fp += 1,
-                (false, false) => {}
-            }
-        }
-        // support: marginal, only where two-gate accepted
-        if !r_two {
-            let owned = matches!(e.class, C::Unsupported | C::Contradicted);
-            match (owned, r_three) {
-                (true, true) => support.tp += 1,
-                (true, false) => support.fn_ += 1,
-                (false, true) => support.fp += 1,
-                (false, false) => {}
-            }
-        }
-    }
+    // 95% bootstrap CIs (B=1000, fixed seed) for the three per-rule F1s
+    // and the three-gate should-refuse F1. Point estimates above are
+    // unchanged; these only annotate them.
+    let f1_cis = bootstrap_f1_cis(&ex);
+    let [existence_ci, incontext_ci, support_ci, three_gate_ci] = f1_cis;
 
     // --- §5.3 non-overlap --------------------------------------------------
     // OutOfContext invisible to the existence rule.
@@ -267,20 +405,26 @@ pub fn rule_metrics(rows: &[RunResult]) -> String {
     let _ = writeln!(out, "## §5.2 — per-rule isolation");
     let _ = writeln!(
         out,
-        "| rule | owned class | precision | recall | F1 | tp/fp/fn |"
+        "F1 columns carry a 95% bootstrap CI (B={BOOTSTRAP_B}, \
+         resample-with-replacement over the {} examples, fixed seed).\n",
+        ex.len()
+    );
+    let _ = writeln!(
+        out,
+        "| rule | owned class | precision | recall | F1 (95% CI) | tp/fp/fn |"
     );
     let _ = writeln!(out, "|---|---|---|---|---|---|");
-    for (name, owned, m) in [
-        ("existence", "fabricated_span", existence),
-        ("in-context", "out_of_context", incontext),
-        ("support", "unsupported+contradicted", support),
+    for (name, owned, m, ci) in [
+        ("existence", "fabricated_span", existence, existence_ci),
+        ("in-context", "out_of_context", incontext, incontext_ci),
+        ("support", "unsupported+contradicted", support, support_ci),
     ] {
         let _ = writeln!(
             out,
-            "| {name} | {owned} | {:.3} | {:.3} | {:.3} | {}/{}/{} |",
+            "| {name} | {owned} | {:.3} | {:.3} | {} | {}/{}/{} |",
             m.precision(),
             m.recall(),
-            m.f1(),
+            fmt_ci(m.f1(), ci),
             m.tp,
             m.fp,
             m.fn_,
@@ -335,27 +479,37 @@ pub fn rule_metrics(rows: &[RunResult]) -> String {
          examples (positive = injected failure).\n",
         ex.len()
     );
+    let _ = writeln!(
+        out,
+        "The `three_gate` F1 carries the same 95% bootstrap CI \
+         (B={BOOTSTRAP_B}, fixed seed) as §5.2.\n"
+    );
     let _ = writeln!(out, "| policy | precision | recall | F1 | composed? |");
     let _ = writeln!(out, "|---|---|---|---|---|");
     for (name, p, composed_flag) in ladder {
         let m = policy_refusal_prf(&ex, p);
+        let f1_cell = if p == Policy::ThreeGate {
+            fmt_ci(m.f1(), three_gate_ci)
+        } else {
+            format!("{:.3}", m.f1())
+        };
         let _ = writeln!(
             out,
-            "| {name} | {:.3} | {:.3} | {:.3} | {} |",
+            "| {name} | {:.3} | {:.3} | {f1_cell} | {} |",
             m.precision(),
             m.recall(),
-            m.f1(),
             if composed_flag { "yes" } else { "no" },
         );
     }
     let _ = writeln!(
         out,
         "\n**Additive lift: +{lift:.1} F1 points** — composed validator \
-         (three-gate, F1 {composed:.3}) over the strongest non-composed \
+         (three-gate, F1 {}) over the strongest non-composed \
          baseline (F1 {baseline:.3}). Only `vanilla_rag` and \
          `existence_only` are non-composed (single-rule) policies; \
          in-context-alone and support-alone are not isolable in a nested \
-         policy stack. Target was ≥10 points."
+         policy stack. Target was ≥10 points.",
+        fmt_ci(composed, three_gate_ci)
     );
     out
 }
@@ -520,6 +674,123 @@ fn describe(outcome: &Outcome) -> String {
 }
 
 #[cfg(test)]
+mod bootstrap_tests {
+    use super::*;
+
+    #[test]
+    fn splitmix64_is_deterministic_for_a_seed() {
+        let mut a = SplitMix64::new(42);
+        let mut b = SplitMix64::new(42);
+        let xs: Vec<u64> = (0..8).map(|_| a.next_u64()).collect();
+        let ys: Vec<u64> = (0..8).map(|_| b.next_u64()).collect();
+        assert_eq!(xs, ys);
+        // A different seed gives a different stream.
+        let mut c = SplitMix64::new(43);
+        let zs: Vec<u64> = (0..8).map(|_| c.next_u64()).collect();
+        assert_ne!(xs, zs);
+    }
+
+    #[test]
+    fn below_is_in_range_and_covers_buckets() {
+        let mut rng = SplitMix64::new(7);
+        let n = 5;
+        let mut seen = [false; 5];
+        for _ in 0..2000 {
+            let v = rng.below(n);
+            assert!(v < n, "below({n}) returned {v}");
+            seen[v] = true;
+        }
+        // Over 2000 draws every bucket of a size-5 range should appear.
+        assert!(seen.iter().all(|&s| s), "not all buckets sampled: {seen:?}");
+    }
+
+    #[test]
+    fn percentile_nearest_rank_endpoints() {
+        let sorted: Vec<f64> = (1..=100).map(f64::from).collect();
+        // ceil(2.5/100*100)=3 -> idx 2 -> 3.0; ceil(0.975*100)=98 -> 98.0
+        assert_eq!(percentile(&sorted, 2.5), 3.0);
+        assert_eq!(percentile(&sorted, 97.5), 98.0);
+        assert_eq!(percentile(&sorted, 100.0), 100.0);
+    }
+
+    #[test]
+    fn percentile_ci_handles_single_and_empty() {
+        assert_eq!(percentile_ci(&[]), (0.0, 0.0));
+        assert_eq!(percentile_ci(&[0.9]), (0.9, 0.9));
+        let (lo, hi) = percentile_ci(&[0.1, 0.5, 0.9]);
+        assert!(lo <= hi);
+    }
+
+    #[test]
+    fn resample_is_deterministic_and_with_replacement() {
+        let mut r1 = SplitMix64::new(BOOTSTRAP_SEED);
+        let mut r2 = SplitMix64::new(BOOTSTRAP_SEED);
+        let a = resample_indices(&mut r1, 10);
+        let b = resample_indices(&mut r2, 10);
+        assert_eq!(a, b, "same seed must reproduce the resample");
+        assert_eq!(a.len(), 10);
+        assert!(a.iter().all(|&i| i < 10));
+        // With replacement: a duplicate is overwhelmingly likely over a
+        // 10-of-10 draw, and the deterministic seed makes this stable.
+        let mut sorted = a.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert!(sorted.len() < a.len(), "expected a repeat: {a:?}");
+        assert!(resample_indices(&mut r1, 0).is_empty());
+    }
+
+    #[test]
+    fn fmt_ci_keeps_point_estimate_and_two_decimal_bounds() {
+        assert_eq!(fmt_ci(0.929_4, (0.91, 0.95)), "0.929 [0.91, 0.95]");
+    }
+
+    #[test]
+    fn bootstrap_cis_are_reproducible() {
+        use crate::dataset::HallucinationClass as C;
+        use crate::runner::{Outcome, Policy, RefusalReason, RunResult};
+        let mk = |ex: &str, class, policy, refused| RunResult {
+            example: ex.to_string(),
+            class,
+            policy,
+            outcome: if refused {
+                Outcome::Refused(RefusalReason::Unsupported)
+            } else {
+                Outcome::Accepted
+            },
+            expected: Outcome::Accepted,
+            agreement: true,
+        };
+        let mut rows = Vec::new();
+        for (ex, class) in [
+            ("a", C::FabricatedSpan),
+            ("b", C::OutOfContext),
+            ("c", C::Contradicted),
+            ("d", C::Valid),
+        ] {
+            for (p, refd) in [
+                (Policy::VanillaRag, false),
+                (Policy::ExistenceOnly, class == C::FabricatedSpan),
+                (
+                    Policy::TwoGate,
+                    matches!(class, C::FabricatedSpan | C::OutOfContext),
+                ),
+                (Policy::ThreeGate, class != C::Valid),
+            ] {
+                rows.push(mk(ex, class, p, refd));
+            }
+        }
+        let ex = group_examples(&rows);
+        let a = bootstrap_f1_cis(&ex);
+        let b = bootstrap_f1_cis(&ex);
+        assert_eq!(a, b, "fixed-seed bootstrap must be reproducible");
+        for (lo, hi) in a {
+            assert!(lo <= hi, "CI lo>hi: [{lo}, {hi}]");
+            assert!((0.0..=1.0).contains(&lo) && (0.0..=1.0).contains(&hi));
+        }
+    }
+}
+
+#[cfg(test)]
 mod compare_tests {
     use super::*;
     use crate::dataset::HallucinationClass as C;
@@ -652,9 +923,10 @@ mod metrics_tests {
     #[test]
     fn structural_rules_are_perfect_and_disjoint() {
         let out = rule_metrics(&perfect_rows());
-        // existence + in-context: precision 1.000 recall 1.000 F1 1.000
-        assert!(out.contains("| existence | fabricated_span | 1.000 | 1.000 | 1.000 |"));
-        assert!(out.contains("| in-context | out_of_context | 1.000 | 1.000 | 1.000 |"));
+        // existence + in-context: precision 1.000 recall 1.000, F1 1.000
+        // with its bootstrap CI appended. Point estimate is unchanged.
+        assert!(out.contains("| existence | fabricated_span | 1.000 | 1.000 | 1.000 ["));
+        assert!(out.contains("| in-context | out_of_context | 1.000 | 1.000 | 1.000 ["));
         // non-overlap: OOC 100% invisible to existence, support 100% to two-gate
         assert!(out.contains("accepted by existence-only: **1/1 (100.0%)**"));
         assert!(out.contains("accepted by two-gate: **1/1 (100.0%)**"));
@@ -666,7 +938,7 @@ mod metrics_tests {
         // precision = 1/(1+1) = 0.5, recall = 1/1 = 1.0.
         let out = rule_metrics(&perfect_rows());
         assert!(
-            out.contains("| support | unsupported+contradicted | 0.500 | 1.000 |"),
+            out.contains("| support | unsupported+contradicted | 0.500 | 1.000 | 0.667 ["),
             "got:\n{out}"
         );
     }
@@ -698,12 +970,15 @@ mod metrics_tests {
             "got:\n{out}"
         );
         assert!(
-            out.contains("| three_gate (1+2+3) | 0.750 | 1.000 | 0.857 | yes |"),
+            out.contains("| three_gate (1+2+3) | 0.750 | 1.000 | 0.857 [")
+                && out.contains("] | yes |"),
             "got:\n{out}"
         );
         assert!(
             out.contains("**Additive lift: +35.7 F1 points**"),
             "got:\n{out}"
         );
+        // Lift sentence keeps the point estimate and appends the CI.
+        assert!(out.contains("(three-gate, F1 0.857 ["), "got:\n{out}");
     }
 }

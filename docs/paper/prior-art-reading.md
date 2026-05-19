@@ -10,8 +10,8 @@ The reading list for Week 1 of the paper timeline. ~15 hours total. Fill in each
 
 Each entry has a `Status:` line. There are three levels:
 
-1. `first-pass` — Claude-drafted from training data, no web access. Earlier version of this doc.
-2. `web-verified YYYY-MM-DD via Claude+WebFetch` — Claude refetched the actual arXiv (abstract + HTML render) and corrected the first-pass against the source. **This is where every entry stands at 2026-05-15.**
+1. `first-pass` — drafted from training data, no web access. Earlier version of this doc.
+2. `web-verified YYYY-MM-DD` — refetched the actual arXiv (abstract + HTML render) and corrected the first-pass against the source. **This is where every entry stands at 2026-05-15.**
 3. `verified YYYY-MM-DD by <name>` — a human read the actual PDF, pulled exact quotes from the published version, and checked every claim. **No entry is at this level yet.** Critical for entries marked with 🔴 below.
 
 The 🔴 marker flags entries where the web-verification revealed a material correction from the first-pass. For those, the human read should pay extra attention to the corrected claim.
@@ -56,7 +56,7 @@ Copy this block per paper:
 
 **Citation:** Rashkin, H., Nikolaev, V., Lamm, M., Aroyo, L., Collins, M., Das, D., Petrov, S., Tomar, G. S., Turc, I., Reitter, D. (2023). *Measuring Attribution in Natural Language Generation Models.* TACL. (Authors verified via arXiv:2112.12870.)
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch (arxiv abstract + ar5iv render).
+**Status:** web-verified 2026-05-15 (arxiv abstract + ar5iv render).
 
 **One-paragraph summary:** Introduces the **AIS** ("Attributable to Identified Sources") framework. A model output is AIS-attributable to a source iff a generic listener would conclude the output is fully derivable from the source. Operationalized as a **two-stage human-evaluation protocol**: (1) an **Interpretability Rating** that checks the output is comprehensible without seeing the source, and (2) an **AIS Rating** that checks whether all information in the output can be supported by the provided source using the "according to" test. Validated across conversational QA, summarization, and table-to-text generation.
 
@@ -83,7 +83,7 @@ Copy this block per paper:
 
 **Citation:** Bohnet, B., Tran, V. Q., Verga, P., Aharoni, R., Andor, D., Baldini Soares, L., Ciaramita, M., Eisenstein, J., Ganchev, K., Herzig, J., Hui, K., Kwiatkowski, T., Ma, J., Ni, J., Sestorain Saralegui, L., Schuster, T., Cohen, W. W., Collins, M., Das, D., Metzler, D., Petrov, S., Webster, K. (2022). *Attributed Question Answering: Evaluation and Modeling for Attributed Large Language Models.* arXiv:2212.08037.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch.
+**Status:** web-verified 2026-05-15.
 
 **One-paragraph summary:** Defines the **attributed QA** task and provides a reproducible evaluation framework for it. Benchmarks a broad set of architectural approaches (retrieve-then-generate, generate-then-retrieve, generate-then-rerank) against AIS-style human evaluation. The contribution is task definition + architectural comparison, not new citation-validation methodology.
 
@@ -106,7 +106,7 @@ Copy this block per paper:
 
 **Citation:** Gao, T., Yen, H., Yu, J., Chen, D. (2023). *Enabling Large Language Models to Generate Text with Citations.* EMNLP 2023.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch (deep read of methodology section). 🔴 Material correction from first-pass.
+**Status:** web-verified 2026-05-15 (deep read of methodology section). 🔴 Material correction from first-pass.
 
 **One-paragraph summary:** Introduces **ALCE**, the standard benchmark for generation-with-citations. Builds three datasets (ASQA from ambiguous QA, QAMPARI from list-style QA, ELI5 from long-form QA). Defines **automatic metrics along three dimensions** — fluency, correctness, and citation quality — and validates them against human judgments. The citation-quality metrics use the **TRUE NLI model** (T5-11B fine-tuned on multiple NLI datasets) to score entailment. Reports baselines across closed and open LLMs.
 
@@ -135,7 +135,7 @@ Copy this block per paper:
 
 **Citation:** Liu, N. F., Zhang, T., Liang, P. (2023). *Evaluating Verifiability in Generative Search Engines.* Findings of EMNLP 2023.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch.
+**Status:** web-verified 2026-05-15.
 
 **One-paragraph summary:** Audits four commercial generative search engines (Bing Chat, NeevaAI, Perplexity, YouChat) on 1,500 questions across four question sources. Human raters score each (statement, cited URL) pair on whether the citation supports the statement. Headline finding: **only 51.5% of generated sentences are fully supported by their citations**, and **only 74.5% of citations actually support their associated statements**. Closest spirit-of-the-paper to ours — exposes a verifiability gap, but stops short of decomposing the failure modes.
 
@@ -165,7 +165,7 @@ Copy this block per paper:
 
 **Citation:** Menick, J., Trebacz, M., Mikulik, V., Aslanides, J., Song, F., Chadwick, M., Glaese, M., Young, S., Campbell-Gillingham, L., Irving, G., McAleese, N. (2022). *Teaching language models to support answers with verified quotes.* arXiv:2203.11147 (DeepMind tech report).
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch (ar5iv render of the mechanism section). 🔴 Material correction from first-pass.
+**Status:** web-verified 2026-05-15 (ar5iv render of the mechanism section). 🔴 Material correction from first-pass.
 
 **One-paragraph summary:** Trains a 280B-parameter LM via reinforcement learning to produce answer + verbatim quote(s) from a retrieved document. The key mechanism (corrected from the first-pass entry, which underspecified it) is **constrained decoding**: when the model is in "quote mode," the decoder is restricted so the emitted tokens *must* form a verbatim substring of the retrieved document. From the paper: *"In order to ensure the quotes are 'verbatim' with a generative approach, we introduce a special syntax for the language model to use when quoting from documents and constrain the outputs of the model to be exact quotes from the retrieved documents when in this mode."* Primary evaluation metric is **"Supported & Plausible"** (S&P) — whether the answer is plausible AND supported by the quote.
 
@@ -192,7 +192,7 @@ Copy this block per paper:
 
 **Citation:** Kamalloo, E., Jafari, A., Zhang, X., Thakur, N., Lin, J. (2023). *HAGRID: A Human-LLM Collaborative Dataset for Generative Information-Seeking with Attribution.* arXiv:2307.16883.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch.
+**Status:** web-verified 2026-05-15.
 
 **Summary + gap:** Collaborative dataset construction: GPT-3.5 drafts attributed explanations, humans rate them on informativeness and attributability. Resulting dataset supports training "models that retrieve candidate quotes and generate attributed explanations." The citation evaluation re-uses ALCE-style metrics (citation precision / recall via NLI). Same single-signal limitation. **Does not subsume.**
 
@@ -202,7 +202,7 @@ Copy this block per paper:
 
 **Citation:** Malaviya, C., Lee, S., Chen, S., Sieber, E., Yatskar, M., Roth, D. (2024). *ExpertQA: Expert-Curated Questions and Attributed Answers.* NAACL 2024.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch.
+**Status:** web-verified 2026-05-15.
 
 **Summary + gap:** 2,177 questions across 32 fields with domain-expert verification. Multidimensional evaluation that separately tracks attribution quality and factuality. Experts rate whether claims are "supported by verifiable sources" — this is essentially our gate 3 with human raters and domain expertise. Attribution is one dimension among several; it isn't itself decomposed into existence/in-context/support. **Does not subsume**, but worth flagging as the closest existing example of multi-attribute eval that we could extend with the three-rule decomposition.
 
@@ -212,7 +212,7 @@ Copy this block per paper:
 
 **Citation:** Gao, L., Dai, Z., Pasupat, P., Chen, A., Chaganty, A. T., Fan, Y., Zhao, V. Y., Lao, N., Lee, H., Juan, D.-C., Guu, K. (2022). *RARR: Researching and Revising What Language Models Say, Using Language Models.* ACL 2023.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch.
+**Status:** web-verified 2026-05-15.
 
 **Summary + gap:** "Automatically finds attribution for the output of any text generation model and post-edits the output to fix unsupported content while preserving the original output as much as possible." **Revises** the model output rather than refusing it. Operates on rule 3 (support) with revision-response semantics. The deployment philosophy is the polar opposite of ours (refuse-or-resolve): RARR rewrites confidently, we refuse loudly. Worth one sentence in §2 as the contrast.
 
@@ -222,7 +222,7 @@ Copy this block per paper:
 
 **Citation:** Asai, A., Wu, Z., Wang, Y., Sil, A., Hajishirzi, H. (2024). *Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection.* ICLR 2024.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch (deep read of reflection-token table). 🔴 Material correction from first-pass.
+**Status:** web-verified 2026-05-15 (deep read of reflection-token table). 🔴 Material correction from first-pass.
 
 **Summary + gap:** Trains an LM to emit four kinds of **reflection tokens** during generation, materially more decomposed than the first-pass entry credited:
 
@@ -246,7 +246,7 @@ The decomposition is more sophisticated than I gave it credit for in the first-p
 
 **Citation:** Es, S., James, J., Espinosa-Anke, L., Schockaert, S. (2023). *RAGAS: Automated Evaluation of Retrieval Augmented Generation.* arXiv:2309.15217.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch (deep read of metric formulas).
+**Status:** web-verified 2026-05-15 (deep read of metric formulas).
 
 **Summary + gap:** Reference-free evaluation framework with **three metrics**:
 
@@ -264,7 +264,7 @@ The decomposition is more sophisticated than I gave it credit for in the first-p
 
 **Citation:** Honovich, O., Aharoni, R., Herzig, J., Taitelbaum, H., Kukliansy, D., Cohen, V., Scialom, T., Szpektor, I., Hassidim, A., Matias, Y. (2022). *TRUE: Re-evaluating Factual Consistency Evaluation.* NAACL 2022.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch. 🔴 Minor correction: the finding is more nuanced than "NLI wins."
+**Status:** web-verified 2026-05-15. 🔴 Minor correction: the finding is more nuanced than "NLI wins."
 
 **Summary + gap:** Standardizes 11 factual-consistency datasets, evaluates many metrics. The actual finding (corrected from first-pass): **"large-scale NLI and question generation-and-answering-based approaches achieve strong and complementary results"** — not "NLI dominates." Recommends both NLI and QG-and-QA as starting points. Sets the NLI-for-faithfulness lineage and the *complementary-methods* framing we should adopt for our gate-3 implementation. The TRUE NLI model is what ALCE uses; if we use a DeBERTa-MNLI checkpoint, that's the same family.
 
@@ -277,7 +277,7 @@ The decomposition is more sophisticated than I gave it credit for in the first-p
 
 **Citation:** Gardner, M., Artzi, Y., Basmova, V., Berant, J., Bogin, B., Chen, S., Dasigi, P., Dua, D., Elazar, Y., Gottumukkala, A., Gupta, N., Hajishirzi, H., Ilharco, G., Khashabi, D., Lin, K., Liu, J., Liu, N. F., Mulcaire, P., Ning, Q., Singh, S., Smith, N. A., Subramanian, S., Tsarfaty, R., Wallace, E., Zhang, A., Zhou, B. (2020). *Evaluating Models' Local Decision Boundaries via Contrast Sets.* Findings of EMNLP 2020.
 
-**Status:** web-verified 2026-05-15 via Claude+WebFetch.
+**Status:** web-verified 2026-05-15.
 
 **Summary + gap:** Methodology paper. "Contrast sets involve manually perturbing test instances in small but meaningful ways that typically change the gold label." We cite this once in §4.4 as the justification for the failure-injection operators in `evidence-eval`. **Does not subsume.**
 

@@ -26,9 +26,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
     audit_report, compare_report, fetch_dailymed, has_errors, has_missing, inject_all_variants,
-    lint, load_dataset, load_dataset_path, normalize, render_for_pdf, render_report, render_stats,
-    rule_metrics, run_with_model, write_markdown, AuthorOptions, DatasetStats, FetchConfig,
-    InjectionConfig, Report, SupportMode, UreqClient,
+    lint, load_dataset, load_dataset_path, measure, normalize, render_for_pdf, render_latency,
+    render_report, render_stats, rule_metrics, run_with_model, write_markdown, AuthorOptions,
+    DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -101,6 +101,29 @@ enum Command {
         #[arg(long, value_name = "HF_REPO")]
         nli_model: Option<String>,
         /// Optional output path for the metrics markdown. Default: stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// §5.7 cost/latency: wall-clock time attributable to each gate.
+    /// Times a mock-only pass (structural cost) and a real-NLI pass over
+    /// the same dataset; the delta is the support-gate (NLI) cost. Emits
+    /// a markdown table with mean per-call figures, the structural-vs-
+    /// support split, and an honest note on the measurement method.
+    Latency {
+        /// Path to a TOML eval dataset, or a directory of `*.toml`.
+        /// Inject first so the failure variants exercise every gate.
+        #[arg(long)]
+        dataset: PathBuf,
+        /// Present for symmetry with `run`/`metrics`. The real-NLI pass
+        /// always runs (it is what the support figure measures); this
+        /// flag is accepted and is a no-op, kept so scripted invocations
+        /// match the other subcommands. A warning prints if omitted.
+        #[arg(long)]
+        real_nli: bool,
+        /// Override the NLI model repo (HF id) for the real-NLI pass.
+        #[arg(long, value_name = "HF_REPO")]
+        nli_model: Option<String>,
+        /// Optional output path for the latency markdown. Default: stdout.
         #[arg(long)]
         output: Option<PathBuf>,
     },
@@ -226,6 +249,12 @@ fn real_main() -> Result<ExitCode> {
             nli_model,
             output,
         } => metrics_command(&dataset, real_nli, nli_model.as_deref(), output.as_deref()),
+        Command::Latency {
+            dataset,
+            real_nli,
+            nli_model,
+            output,
+        } => latency_command(&dataset, real_nli, nli_model.as_deref(), output.as_deref()),
         Command::Inject { input, output } => inject_command(&input, &output),
         Command::Fetch { source } => match source {
             FetchSource::Dailymed {
@@ -444,6 +473,31 @@ fn metrics_command(
     if let Some(out_path) = output {
         std::fs::write(out_path, md.as_bytes()).context("writing metrics")?;
         eprintln!("wrote metrics to {}", out_path.display());
+    } else {
+        print!("{md}");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn latency_command(
+    dataset_path: &std::path::Path,
+    real_nli: bool,
+    nli_model: Option<&str>,
+    output: Option<&std::path::Path>,
+) -> Result<ExitCode> {
+    let dataset = load_dataset_path(dataset_path).context("loading dataset")?;
+    if !real_nli {
+        eprintln!(
+            "note: latency always runs the real-NLI pass (it is what the \
+             support figure measures); --real-nli omitted"
+        );
+    }
+    let m = measure(&dataset, nli_model).context("measuring latency")?;
+    let nli_label = nli_model.unwrap_or("distilbert (default)");
+    let md = render_latency(&m, nli_label);
+    if let Some(out_path) = output {
+        std::fs::write(out_path, md.as_bytes()).context("writing latency report")?;
+        eprintln!("wrote latency report to {}", out_path.display());
     } else {
         print!("{md}");
     }
