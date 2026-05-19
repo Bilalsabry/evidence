@@ -168,7 +168,18 @@ authoring bias that flatters the validator."
 **Severity.** Critical. For a benchmark paper this is the existential
 attack and the reviewer will be right to push.
 
-**Response.** Disclosed in full and defended with an automated audit
+**Response.** We turn this into a strength. The seeds came from a
+**deterministic, reproducible authoring pipeline under a single fixed,
+published guideline** (`docs/EVAL.md`), every cited span was then
+checked verbatim against the source PDFs by an **automated faithfulness
+audit** (`evidence-eval audit-faithfulness`) that found **zero
+fabrications**, and we **self-caught, documented, and corrected** an
+authoring bug (v1→v2) rather than ship past it. Disclosed, auditable,
+reproduced authoring is a stronger basis for trust than an
+unverifiable assertion of manual curation — and the structural results
+(existence / in-context, non-overlap) are authoring-independent by
+construction, so the central claims do not rest on the seed prose at
+all. Concretely, disclosed in full and defended with an automated audit
 plus a self-caught bug:
 
 1. **Full datasheet.** Authoring method, constraints, and limitations
