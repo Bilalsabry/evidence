@@ -22,6 +22,7 @@ pub mod fetch;
 pub mod inject;
 pub mod latency;
 pub mod lint;
+pub mod natfail;
 pub mod report;
 pub mod runner;
 pub mod stats;
@@ -38,6 +39,9 @@ pub use inject::{
 };
 pub use latency::{measure, render_latency, LatencyMeasurement, Pass};
 pub use lint::{has_errors, lint, render_report, Diagnostic, Severity};
+pub use natfail::{
+    prepare_worksheet, render_worksheet, worksheet_rows, ValidatorVerdict, WorksheetRow,
+};
 pub use report::{compare_report, rule_metrics, write_markdown, Prf, Report};
 pub use runner::{run, run_with_mode, run_with_model, Outcome, Policy, RunResult, SupportMode};
 pub use stats::{render_stats, DatasetStats, Dist};

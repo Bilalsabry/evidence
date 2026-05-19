@@ -26,9 +26,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use evidence_eval::{
     audit_report, compare_report, fetch_dailymed, has_errors, has_missing, inject_all_variants,
-    lint, load_dataset, load_dataset_path, measure, normalize, render_for_pdf, render_latency,
-    render_report, render_stats, rule_metrics, run_with_model, write_markdown, AuthorOptions,
-    DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
+    lint, load_dataset, load_dataset_path, measure, normalize, prepare_worksheet, render_for_pdf,
+    render_latency, render_report, render_stats, rule_metrics, run_with_model, write_markdown,
+    AuthorOptions, DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
 };
 use std::time::Duration;
 
@@ -124,6 +124,32 @@ enum Command {
         #[arg(long, value_name = "HF_REPO")]
         nli_model: Option<String>,
         /// Optional output path for the latency markdown. Default: stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// §5.6 natural-failure prep: render an annotation worksheet from a
+    /// TOML of *real model-generated* answers. Each item is run through
+    /// the three-gate validator; the worksheet records the validator's
+    /// typed verdict and a BLANK human-label column for annotators to
+    /// fill. This produces a worksheet, NOT a result — the
+    /// natural-failure table (CLAIMS.md claim 4) is computed from human
+    /// labels after double-annotation, never auto-graded here. See
+    /// `docs/paper/natural-failure-protocol.md`.
+    NatfailPrep {
+        /// Path to a TOML of candidate answers (standard Example schema;
+        /// `class` is a to-be-human-labeled placeholder), or a directory
+        /// of `*.toml`.
+        dataset: PathBuf,
+        /// Use the real NLI cross-encoder for the support gate. This is
+        /// the study's intended mode — real model outputs deserve the
+        /// real support gate. Without it the support gate is the
+        /// deterministic class-derived mock (only for tests).
+        #[arg(long)]
+        real_nli: bool,
+        /// Override the NLI model repo (HF id) used by `--real-nli`.
+        #[arg(long, value_name = "HF_REPO")]
+        nli_model: Option<String>,
+        /// Optional output path for the worksheet markdown. Default: stdout.
         #[arg(long)]
         output: Option<PathBuf>,
     },
@@ -255,6 +281,12 @@ fn real_main() -> Result<ExitCode> {
             nli_model,
             output,
         } => latency_command(&dataset, real_nli, nli_model.as_deref(), output.as_deref()),
+        Command::NatfailPrep {
+            dataset,
+            real_nli,
+            nli_model,
+            output,
+        } => natfail_prep_command(&dataset, real_nli, nli_model.as_deref(), output.as_deref()),
         Command::Inject { input, output } => inject_command(&input, &output),
         Command::Fetch { source } => match source {
             FetchSource::Dailymed {
@@ -498,6 +530,38 @@ fn latency_command(
     if let Some(out_path) = output {
         std::fs::write(out_path, md.as_bytes()).context("writing latency report")?;
         eprintln!("wrote latency report to {}", out_path.display());
+    } else {
+        print!("{md}");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn natfail_prep_command(
+    dataset_path: &std::path::Path,
+    real_nli: bool,
+    nli_model: Option<&str>,
+    output: Option<&std::path::Path>,
+) -> Result<ExitCode> {
+    let dataset = load_dataset_path(dataset_path).context("loading candidate answers")?;
+    let mode = if real_nli {
+        SupportMode::RealNli
+    } else {
+        eprintln!(
+            "note: natfail-prep without --real-nli uses the deterministic \
+             class-derived support mock; pass --real-nli for the study's \
+             intended real support gate"
+        );
+        SupportMode::Mock
+    };
+    if nli_model.is_some() && !real_nli {
+        eprintln!("warning: --nli-model is ignored without --real-nli");
+    }
+    let answers_label = dataset_path.display().to_string();
+    let md = prepare_worksheet(&dataset, mode, nli_model, &answers_label)
+        .context("preparing natural-failure worksheet")?;
+    if let Some(out_path) = output {
+        std::fs::write(out_path, md.as_bytes()).context("writing worksheet")?;
+        eprintln!("wrote annotation worksheet to {}", out_path.display());
     } else {
         print!("{md}");
     }
