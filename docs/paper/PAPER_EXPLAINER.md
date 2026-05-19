@@ -20,10 +20,12 @@ for this query; (3) **does it actually support the claim**. We built a
 local-first system (`evidence`) that validates all three at the
 boundary where output is emitted, a benchmark of 254 FDA-drug-label
 examples expanded to 1,270 with controlled failure injection, and an
-evaluation harness that measures each rule in isolation. The result:
-the first two rules are *exact* and *model-independent*, the three
-rules catch **perfectly disjoint** classes of error (100% non-overlap),
-and the composed validator beats the best single rule by **+56 F1
+evaluation harness that measures each rule in isolation. On the v2
+injected FDA-label benchmark (not real-world prevalence): the first
+two rules are *exact* and *model-independent*, the three rules catch
+**fully disjoint** classes of error (100% by the operational
+blindness measure on the injected benchmark), and the composed
+validator beats the best single rule by **+56 F1
 points**. The third rule (semantic support) is the soft one — it
 catches real failures at 99% recall but a weak NLI model
 over-refuses ~30–50% of true claims, which is itself a measured,
@@ -83,14 +85,29 @@ A decomposed signal tells you which lever to pull.
 ### 2.3 The thesis
 
 > Citation correctness decomposes into three operationally independent
-> constraints — existence, in-context, support — and on a controlled
-> benchmark they catch non-overlapping classes of error. The
-> decomposition, plus the empirical evidence that it is real, is the
-> contribution.
+> constraints — existence, in-context, support — and on the v2
+> injected FDA-label benchmark (not real-world prevalence) they catch
+> non-overlapping classes of error. The decomposition, plus the
+> empirical evidence supporting it under matched-pair failure
+> injection, is the contribution.
 
 The paper's working title: *Three Rules for a Citation: Decomposing
 Faithfulness in Retrieval-Augmented Generation.* Target venue:
 TrustNLP @ ACL 2026 (workshop).
+
+### 2.4 Scope: citation correctness, not causal faithfulness
+
+We validate citation *correctness* at the output boundary. The
+in-context gate verifies the cited span was in the retrieval set the
+model was shown; it does NOT verify the model causally relied on that
+span when generating the sentence — a model can post-rationalize a
+well-formed citation. Causal reliance (counterfactual span removal,
+attribution tracing) is a distinct fourth dimension and is explicitly
+out of scope. This boundary is deliberate: existence, in-context, and
+support are checkable at the validator without model internals; causal
+faithfulness is not. Recent work separates citation correctness from
+faithfulness and reports substantial post-rationalization; our claims
+are confined to correctness.
 
 ---
 
@@ -253,8 +270,9 @@ Swapping the baseline distilbert-MNLI for DeBERTa-v3:
 - Three-gate agreement: 1,106 → 1,166 / 1,270 (**+60**).
 - Valid-retention: 167 → 181 / 254.
 - Contradicted catch: 212 → 244 / 254. Unsupported: 219 → 233 / 254.
-- Structural classes (fabricated, out-of-context): **Δ = 0** — proof
-  that rules 1 and 2 do not depend on the NLI model at all.
+- Structural classes (fabricated, out-of-context): **Δ = 0** — showing
+  on the injected benchmark that rules 1 and 2 do not depend on the
+  NLI model at all.
 
 A stronger model helps but does not eliminate support-gate
 conservatism (~29% of true, well-cited claims still refused). That
@@ -282,15 +300,22 @@ The central claim. Is each failure class invisible to the rules that
 precede its owning gate?
 
 - Out-of-context citations accepted by existence-only: **254/254
-  (100%)** — the existence rule is entirely blind to in-context errors.
+  (100%)** — the existence rule is entirely blind to in-context errors
+  (out-of-context is invisible to the existence gate).
 - Support failures accepted by two-gate: **508/508 (100%)** — rules 1
-  and 2 are entirely blind to support errors.
+  and 2 are entirely blind to support errors (support is invisible to
+  the two-gate).
 
-**100% disjoint.** No failure is caught by a rule other than the one
-that owns it. The three rules are not redundant re-measurements of one
-signal; they address independent failure modes. Omitting any rule
-leaves its entire class undetected. This is the strongest possible form
-of the paper's thesis. (Target in CLAIMS.md was ≥80%; actual 100%.)
+**Fully disjoint on the injected benchmark (100% by the operational
+blindness measure).** This is a measured *blindness* property — each
+preceding gate is structurally unable to see the next class — not an
+artifact of the policies being nested. No failure is caught by a rule
+other than the one that owns it. The three rules are not redundant
+re-measurements of one signal; they address independent failure modes.
+Omitting any rule leaves its entire class undetected. This is a clean
+form of the paper's thesis on this benchmark; it holds on the v2
+injected FDA-label benchmark, not real-world prevalence. (Target in
+CLAIMS.md was ≥80%; actual 100%.)
 
 ### 5.4 Composition and additive lift — `rule-metrics.md`
 
@@ -312,9 +337,10 @@ rule — a conservative, lower-bound choice.)
 
 ### 5.5 What the numbers mean together
 
-- The paper's contribution (the decomposition) is justified iff each
-  rule isolates its class **and** the rules don't overlap. Both hold,
-  with hard numbers: §5.2 (isolation) + §5.3 (100% disjoint).
+- The paper's contribution (the decomposition) is supported on the
+  controlled injected benchmark iff each rule isolates its class
+  **and** the rules don't overlap. Both hold there, with hard numbers:
+  §5.2 (isolation) + §5.3 (100% disjoint on the injected benchmark).
 - The structural rules (1, 2) are *exact* and *model-independent*. This
   is the safe, unattackable core.
 - The one soft number (support precision 0.873) is **not** a hole in
@@ -346,6 +372,10 @@ Four CLAIMS.md empirical claims; three resolved, one open:
 - **§5.5 ALCE comparison.** Translating an ALCE subset into this
   framework to show the decomposition is not a benchmark artifact —
   planned, not run.
+- **Class-balanced injection caveat.** Headline F1/lift come from a
+  class-balanced injected set (failures prevalent); real RAG has lower
+  failure prevalence where false-refusal cost dominates — we report the
+  support false-refusal rate explicitly rather than optimize it away.
 - **§5.7 cost/latency** — not measured.
 - **Wider human audit of the 254 seeds** — only a sample was audited
   against source PDFs; an exhaustive human pass is recommended before
@@ -401,8 +431,8 @@ download on first run.
 - `rule-metrics.md` — §5.2 / §5.3 / claim-3 numbers.
 - `nli-comparison.md` — §5.1 distilbert vs DeBERTa table.
 - `fda_label_bench_PROVENANCE.md` — the benchmark datasheet.
-- `section5-results.draft.md` — machine-drafted §5 prose (for the
-  author to revise).
+- `section5-results.draft.md` — §5 results prose draft (for the
+  author to finalize).
 - `crates/evidence-eval/datasets/fda_label_bench.toml` — the 254-seed
   benchmark itself.
 - `docs/EVAL.md` — the harness + authoring guideline (corrected).
@@ -412,14 +442,17 @@ download on first run.
 
 ## 9. The honest bottom line
 
-The decomposition kernel is **proven**: rules 1 and 2 are exact and
-model-independent, the three rules are perfectly disjoint at N=1,270,
-and composition beats the best single rule by +56 F1. The one soft
-spot — semantic support precision — is a measured, separately-argued
-property of the NLI model, not a crack in the idea, and it is exactly
-why the paper argues support must be its own gate with a
-refuse-or-resolve default. The remaining work (claim-4 natural-failure
-study, ALCE comparison, wider human audit, final prose) requires human
-judgment and real labeled data, not more tooling. Everything that could
-be built and measured rigorously, has been; every number is
-reproducible from a single command.
+The decomposition kernel is **supported on a controlled injected
+single-domain benchmark**: there the structural rules are exact and
+model-independent, the three rules are fully disjoint at N=1,270 (100%
+by the operational blindness measure), and composition beats the best
+single rule by +56 F1. Real-world prevalence and causal faithfulness
+are out of scope and open. The one soft spot — semantic support
+precision — is a measured, separately-argued property of the NLI
+model, not a crack in the idea, and it is exactly why the paper argues
+support must be its own gate with a refuse-or-resolve default. The
+remaining work (claim-4 natural-failure study, ALCE comparison, wider
+human audit, final prose) requires human judgment and real labeled
+data, not more tooling. Everything that could be built and measured
+rigorously on this benchmark, has been; every number is reproducible
+from a single command.

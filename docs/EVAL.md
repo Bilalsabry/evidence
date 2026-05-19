@@ -3,7 +3,15 @@
 This document covers the evaluation harness shipped in
 [`crates/evidence-eval/`](../crates/evidence-eval/) and how it underpins
 the in-progress technical post *Closed-Loop Citation: A Three-Gate
-Validator for LLM Hallucinations in Regulated Workflows*.
+Validator for LLM Hallucinations in Regulated Workflows*. All findings
+here are supported on the controlled v2 injected FDA-label benchmark;
+they are not real-world prevalence rates.
+
+The harness ships ten subcommands: `run`, `inject`, `lint`, `stats`,
+`author`, `fetch`, `compare`, `metrics`, `audit-faithfulness`. Of
+these, `audit-faithfulness` verifies that every cited corpus span in a
+dataset faithfully states the fact its response sentence claims — use
+it to catch fragment/paraphrase authoring bugs before `run`.
 
 ## What we're measuring
 
@@ -343,23 +351,30 @@ what `lint` says (lint checks structure, not entailment).
 
 ## Open work, toward the paper
 
-This PR ships the harness, the bootstrap dataset, and the determinism
-guarantee. The paper needs three further pieces:
+The harness, the determinism guarantee, the expanded FDA-label
+benchmark, and the real-NLI run are **shipped**:
 
-1. **Expand the bootstrap dataset** to ~100 examples, drawn from real
-   pharma / clinical-trial / FDA-label text (preserving annotation
-   provenance). Manually-labeled cases per class.
-2. **Real-model run.** Replace the class-driven mock with
-   `NliCrossEncoder`, run the same dataset, and report per-class
-   accuracy of the NLI model. This is the *actual* catch rate of the
-   support gate.
-3. **Real-LLM run.** Replace the fixture model response with calls to
-   a local Ollama model (and an `AI Gateway`-backed remote model).
-   Measure: how often do real LLMs produce each hallucination class
-   on a held-out pharma corpus? This is the *practical* claim — that
-   `evidence` materially reduces hallucination in real workflows.
+1. **Expanded dataset — shipped.** The bootstrap dataset was superseded
+   by `fda_label_bench.toml` (v2): 254 hand-shaped `valid` seeds from
+   50 public-domain DailyMed FDA labels, expanded to 1,270 matched-pair
+   injected examples. Provenance in `docs/paper/fda_label_bench_PROVENANCE.md`.
+2. **Real-NLI run — shipped.** `run --real-nli` swaps the class-driven
+   mock for `NliCrossEncoder` and reports per-class agreement; the
+   §5.1–§5.4 numbers (`docs/paper/section5-results.draft.md`,
+   `rule-metrics.md`, `nli-comparison.md`) are produced by this path.
+   These figures are supported on the controlled injected benchmark,
+   not on real-world traffic.
 
-Each of these is a follow-up issue, scoped after this harness lands.
+One piece remains genuinely open:
+
+3. **Natural-failure / real-LLM run (open).** Replace the fixture model
+   response with calls to a local Ollama model (and an `AI Gateway`-backed
+   remote model) and measure how often real LLMs produce each
+   hallucination class on a held-out pharma corpus with no injection.
+   Not yet run; this is the practical-prevalence question and is out of
+   scope of the current numbers. Tracked as §5.6 in the paper draft.
+
+Items (1) and (2) are done; item (3) is a follow-up issue.
 
 ## References
 

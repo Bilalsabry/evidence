@@ -28,6 +28,12 @@ grammatical quirks preserved, not paraphrased).
 
 ## v2 results
 
+> **Scope note.** These characterize validator behavior under
+> matched-pair injected failures on a single-domain (FDA-label)
+> benchmark; they are not real-world failure rates. Structural rules
+> are exact/model-independent; the support gate is a conservative
+> high-recall safety gate.
+
 254 `valid` seeds → 1,270 examples via `inject` → 5,080 (example,
 policy) rows. Whole-dir `lint`: 0 diagnostics.
 
@@ -70,19 +76,27 @@ persists even with complete-sentence citations *and* a strong
 DeBERTa-v3 MNLI model. That residual is now a real, defensible finding
 about the support gate, not an artifact.
 
-**Rules 1 & 2 are flawless and model-independent.** FabricatedSpan
-254/254 at the existence gate, OutOfContext 254/254 at the in-context
-gate, Δ=0 between models, zero cross-gate leakage. The §5.2/§5.3
-kernel claim holds on real drug-label text under both models. This is
-the strongest result and it never depended on the support gate.
-Quantified in `docs/paper/rule-metrics.md`: existence & in-context
-F1 = 1.000, support F1 = 0.929 (recall 0.992), **100% disjoint**.
+**Rules 1 & 2 are flawless and model-independent on the v2 injected
+FDA-label benchmark (not real-world failure prevalence).**
+FabricatedSpan 254/254 at the existence gate, OutOfContext 254/254 at
+the in-context gate, Δ=0 between models, zero cross-gate leakage. The
+§5.2/§5.3 decomposition holds on the controlled benchmark under both
+models, and it never depended on the support gate. Quantified in
+`docs/paper/rule-metrics.md`: existence & in-context F1 = 1.000,
+support F1 = 0.929 (recall 0.992), fully disjoint on the injected
+benchmark (100% by the operational blindness measure). Note that this
+100% non-overlap is a *measured blindness property* — out-of-context
+errors are invisible to existence-only because the cited span does
+exist, and support failures are invisible to two-gate because the
+span exists and is in context — not an artifact of the nested-policy
+construction.
 
 **The support gate works on real failures.** DeBERTa catches
 Contradicted 244/254 (96%) and Unsupported 233/254 (92%). It is
-conservative — it over-refuses ~29% of valid — but it does not *miss*
-bad citations. The failure mode is false-refuse-on-valid, never
-missed-failure. This is the empirical case for measuring the support
+conservative — it over-refuses ~29% of valid on the v2 injected
+FDA-label benchmark (not real-world failure prevalence) — but it does
+not *miss* bad citations. The failure mode is false-refuse-on-valid,
+never missed-failure. This is the empirical case for measuring the support
 gate independently (mock-mode is 100% by construction) and for a
 refuse-or-resolve deployment philosophy: a conservative gate is the
 right default when the cost of a bad citation is high.

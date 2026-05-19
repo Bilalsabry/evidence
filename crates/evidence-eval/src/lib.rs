@@ -15,6 +15,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod audit;
 pub mod author;
 pub mod dataset;
 pub mod fetch;
@@ -24,6 +25,7 @@ pub mod report;
 pub mod runner;
 pub mod stats;
 
+pub use audit::{audit_report, has_missing, match_in, normalize, MatchKind};
 pub use author::{render_for_pdf, render_template, AuthorError, AuthorOptions};
 pub use dataset::{
     load_dataset, load_dataset_path, Dataset, Example, HallucinationClass, SupportMutation,

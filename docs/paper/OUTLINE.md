@@ -2,7 +2,7 @@
 
 **Format:** ACL workshop short paper, 8 pages including references (4–6 pages body + refs).
 
-**Target venue:** TrustNLP @ ACL 2026 + concurrent arXiv preprint.
+**Target venue:** venue/cycle TBD — TrustNLP 2026 deadlines passed; arXiv-first then next suitable ACL/EMNLP cycle.
 
 The outline below is the skeleton. Each section names what goes in it, what's already in the codebase / docs to draw from, and what's still to be written.
 
@@ -15,9 +15,9 @@ The outline below is the skeleton. Each section names what goes in it, what's al
 **The argument.** "Is this citation correct?" is treated as one signal but is actually three independent constraints. Most prior work conflates them, which hides the practitioner's diagnostic question: *which rule failed?*
 
 **The contribution paragraph.** Three sentences:
-1. We decompose citation correctness into existence, in-context, and support.
-2. We build a 300-example FDA-drug-label benchmark with controlled failure injection.
-3. We show the three rules catch non-overlapping classes of errors (target: ≥80% disjoint) and that the composed validator improves citation F1 by [Y] points over the strongest single-rule baseline.
+1. We decompose citation correctness into existence, in-context, and support (citation *correctness* at the validator boundary, not causal citation faithfulness — see §6).
+2. We build an FDA-drug-label benchmark (254 seeds → 1,270 examples) with controlled failure injection.
+3. We show, on the v2 injected FDA-label benchmark (not real-world failure prevalence), that the three rules catch non-overlapping classes of errors (target: ≥80% disjoint) and that the composed validator improves citation F1 by [Y] points over the best single-rule baseline.
 
 **Roadmap sentence.** Section 2 places the work; §3 introduces the rules; §4 the benchmark; §5 the experiments; §6 limitations + future work.
 
@@ -78,7 +78,7 @@ The synthetic-failure approach is defensible because each failure is generated b
 
 **Subsection 4.5: Natural-failure supplement.** Real LLM outputs (Llama 3.1 8B, Qwen 2.5 7B) on the benchmark questions, no injection. Author + 1 co-author rate failures into our taxonomy. Smaller (~80 examples) but methodologically real.
 
-**Draws from:** [`crates/evidence-eval/datasets/bootstrap.toml`](../../crates/evidence-eval/datasets/bootstrap.toml) (current 30-example shape) extended to 300. The TOML format is the artifact released alongside the paper.
+**Draws from:** [`crates/evidence-eval/datasets/bootstrap.toml`](../../crates/evidence-eval/datasets/bootstrap.toml) (current 30-example shape) extended to 254 seeds → 1,270 examples. The TOML format is the artifact released alongside the paper.
 
 ---
 
@@ -98,7 +98,7 @@ The synthetic-failure approach is defensible because each failure is generated b
 
 **Subsection 5.7: Cost analysis.** Latency per rule. Cumulative validator overhead vs. retrieval. (Industry readers care.)
 
-**Draws from:** machine-drafted §5 with final numbers in
+**Draws from:** the §5 results draft with final numbers in
 [`section5-results.draft.md`](section5-results.draft.md) (revise before
 submission). §5.1–§5.4 are measured on the v2 FDA benchmark and
 reproducible: §5.2 existence/in-context F1 = 1.000, support F1 = 0.929;
@@ -117,7 +117,10 @@ the v1→v2 audit.
 **Write this section first.** Forces honesty; prevents reviewer surprise.
 
 - Benchmark domain is narrow (FDA labels). No generalization claim.
-- Benchmark size is small (300 examples). Workshop-appropriate; not main-conf-strength.
+- Benchmark size is small (254 seeds → 1,270 examples). Workshop-appropriate; not main-conf-strength.
+- We claim citation *correctness* at the validator boundary, not causal citation faithfulness — the in-context gate shows the span was *available* to the model, not that the model *relied* on it; post-rationalization is possible. Causal reliance is a separate, out-of-scope fourth dimension.
+- The injected benchmark is class-balanced (failures prevalent); +F1 / lift numbers do not reflect real-world failure prevalence, where false-refusal cost dominates. We report the support gate's false-refusal rate explicitly.
+- Benchmark seeds are AI-assisted-authored and only sample-audited (datasheet: `fda_label_bench_PROVENANCE.md`). Structural results (existence / in-context, non-overlap) are authoring-independent; support-gate numbers carry an authoring-homogeneity caveat.
 - Manual verification is author-only for the synthetic corpus; co-author rates the natural-failure supplement.
 - NLI cross-encoder errors propagate. We measure NLI accuracy independently as a separate column.
 - Failure injection is by construction. The natural-failure supplement (§5.6) addresses this partially but does not eliminate the concern.
@@ -141,7 +144,7 @@ Final sentence: pointer to the open-source artifact (`evidence`, link, license, 
 
 ACL workshops increasingly accept an artifact appendix. We submit:
 - The `evidence` repository, tagged at the version used for the paper's experiments.
-- The 300-example benchmark + 900 failure-injected variants as a TOML file.
+- The benchmark (254 seeds → 1,270 examples, failure-injected variants) as a TOML file.
 - The exact eval-harness command-line invocations that reproduce every table.
 - Reproducibility checklist (model versions, hardware, random seeds).
 
