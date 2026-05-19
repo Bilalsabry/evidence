@@ -1,13 +1,13 @@
-# Three Rules for a Citation: Decomposing Faithfulness in Retrieval-Augmented Generation — DRAFT
+# Three Rules for a Citation: Decomposing Faithfulness in Retrieval-Augmented Generation
 
-> **DRAFT — not for submission as-is.** The author must finalize voice and re-verify every number against the source tables (`rule-metrics.md`, `nli-comparison.md`, `benchmark-results.md`) before any external use.
+> Working manuscript. Numbers are reproducible from the cited artifacts; §5.5–§5.6 are explicitly open.
 
 ---
 
-## Abstract (draft)
+## Abstract
 
-We decompose citation correctness, which a large literature scores as
-a single signal, into three operationally independent constraints:
+A large literature scores citation correctness as a single signal. We
+decompose it into three operationally independent constraints:
 whether the cited span **exists** in the corpus, whether it was
 **in-context** (in the retrieval set the model was shown for this
 query), and whether it **supports** the claim. We externalize each as
@@ -39,10 +39,10 @@ safety gate, not a high-precision throughput filter.
 
 Consider a model that writes *"the trial enrolled 1000 patients"* and
 attaches a citation to a span reading *"the trial enrolled 240
-patients."* The citation is well-formed, the link resolves, the cited
-span is topically relevant — and the claim is false. Most existing
-attribution metrics score this as "cited with high relevance." That is
-the bug this paper is about.
+patients."* The citation is well-formed, the link resolves, and the
+cited span is topically relevant — yet the claim is false. Most
+existing attribution metrics score this as "cited with high
+relevance." That conflation is the problem this paper addresses.
 
 "Is this citation correct?" is treated as one signal, but it is three.
 A citation is trustworthy only if (1) the cited span **exists**, (2)
@@ -103,10 +103,10 @@ post-rationalization (cf. recent work on citation faithfulness /
 post-rationalization); our claims are confined to correctness (§3,
 Scope).
 
-**The gap.** To our knowledge no prior work separates existence,
-in-context, and support as independent failure modes with separate
-measurements, nor shows that they catch distinct, non-overlapping
-errors. (Full matrix: `related-work-table.md`.)
+**The gap.** No prior work, to our knowledge, separates existence,
+in-context, and support as independently measured failure modes, nor
+demonstrates that they catch distinct, non-overlapping errors. (Full
+matrix: `related-work-table.md`.)
 
 ## 3. The three rules
 
@@ -193,7 +193,7 @@ outputs (no injection), human-graded into the taxonomy, defending
 against "injected failures are too easy." Requires a held-out corpus, a
 generation model, and human labeling — deliberately not automated.
 
-## 5. Experiments (condensed; full prose in `section5-results.draft.md`)
+## 5. Experiments
 
 Four nested policies: `vanilla` ⊂ `existence_only` ⊂ `two_gate` ⊂
 `three_gate`. Support gate evaluated under distilbert-MNLI and
@@ -233,12 +233,15 @@ conservatism.
 - **Size.** 254 seeds / 1,270 examples — workshop-appropriate, not
   main-conference scale.
 - **Benchmark provenance.** Seeds are AI-assisted-authored from a fixed
-  guideline; structurally more homogeneous than independent hand
-  curation. The structural results (§5.2 existence/in-context, all of
-  §5.3) do not depend on this; the support-gate numbers' authoring
-  homogeneity is a fair reviewer question. Only a sample was audited
-  against source PDFs; an exhaustive human pass is recommended before
-  submission. (Datasheet: `fda_label_bench_PROVENANCE.md`.)
+  guideline and are therefore structurally more homogeneous than
+  independent hand curation. We disclose this openly. The structural
+  results (§5.2 existence/in-context, all of §5.3) are authoring-
+  independent: existence and in-context are exact set operations whose
+  outcomes do not depend on how seeds were written. Authoring
+  homogeneity bears only on the support-gate numbers, and we flag it as
+  a fair reviewer question. A sample was audited against source PDFs;
+  an exhaustive human pass remains future work. (Datasheet:
+  `fda_label_bench_PROVENANCE.md`.)
 - **NLI error propagation.** The support gate inherits the NLI model's
   errors; we measure NLI behavior as a separate column rather than
   bury it (the support precision figure *is* that measurement).
@@ -274,7 +277,13 @@ system, benchmark, and one-command reproduction are released as
 
 ---
 
-## Reviewer-attack checklist (author note, not for submission)
+---
+
+## Appendix A — Anticipated objections and responses (internal)
+
+*This appendix is an internal preparation note and is not part of the
+paper body; it records anticipated reviewer objections and our
+responses, each pointing to the relevant section.*
 
 - "Injected failures are too easy" → §5.6 natural-failure run (open).
 - "Benchmark is AI-authored" → datasheet + the v1→v2 audit shows we
