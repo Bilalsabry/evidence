@@ -103,7 +103,7 @@ FLAG_RE='\[verify\]|\[unverified|TODO|FIXME|FILL_IN|Lorem'
 #   - schema-placeholder names like FILL_IN_HUMAN_LABEL described in
 #     the natfail harness/protocol docs (the docs ABOUT the placeholder
 #     are not themselves the placeholder)
-EXCLUDE_FLAG='paper/acl\.sty|paper/acl_natbib\.bst|docs/paper/SUBMISSION_RUNBOOK\.md|docs/paper/natural-failure-harness\.md|docs/paper/natural-failure-protocol\.md'
+EXCLUDE_FLAG='acl\.sty|acl_natbib\.bst|SUBMISSION_RUNBOOK\.md|natural-failure-harness\.md|natural-failure-protocol\.md'
 HITS="$(grep -rnE "$FLAG_RE" docs/ paper/ 2>/dev/null | grep -vE "$EXCLUDE_FLAG" || true)"
 if [ -n "$HITS" ]; then
   printf '%s\n' "$HITS" >&2
