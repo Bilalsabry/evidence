@@ -1,0 +1,137 @@
+# Preflight (cheap subset) — re-certifies each PR against the deterministic
+# subset of `tools/preflight.sh`. The full local script runs ten checks; this
+# workflow runs the eight that are cheap, network-free, and reproducible on a
+# stock `ubuntu-latest` runner. The remaining three checks — step 4
+# (faithfulness audit re-run vs. committed totals), step 8 (metrics / compare /
+# latency number regen + diff against committed docs), and step 9 (latexmk
+# build) — require the full ~/dailymed-corpus, the DeBERTa NLI model, and a
+# TeX Live install. They are intentionally NOT run in CI: the local developer
+# gate (`bash tools/preflight.sh`) owns them, and SUBMISSION_RUNBOOK requires
+# devs to run it before claiming a release is ready. Replicating them here
+# would be slow, network-bound, and flaky for unrelated PRs.
+#
+# Step mapping (from tools/preflight.sh):
+#   1  clean tree on main           — handled by GitHub (PRs run on merge ref)
+#   2  fmt / clippy / tests          — mirrored below
+#   3  dataset lint                  — mirrored below
+#   4  faithfulness audit re-run     — SKIPPED (corpus + model; local gate)
+#   5  no fabrication-flag tokens    — mirrored below
+#   6  no overclaim language         — mirrored below
+#   7  no AI-tool attribution        — mirrored below
+#   8  metrics/compare/latency regen — SKIPPED (corpus + model; local gate)
+#   9  latexmk paper build           — SKIPPED (TeX Live; local gate)
+#  10  summary                       — implicit (job success)
+#
+# Regexes, allowlists, and commands MUST stay in lockstep with
+# tools/preflight.sh — when one changes, the other has to change too.
+
+name: preflight
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  preflight:
+    name: preflight (cheap subset)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Mirror the existing `test` job's cache shape so we share keys and
+      # don't double-warm the runner cache budget. Bump suffixes in lockstep
+      # with ci.yml when models change.
+      - name: Cache cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: preflight-cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            preflight-cargo-${{ runner.os }}-
+
+      - name: Cache ONNX models (HuggingFace + fastembed)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .fastembed_cache
+            ~/.cache/fastembed
+            ~/.cache/huggingface
+          key: onnx-bge-small-v1.5+reranker-base+distilbert-mnli-v3
+
+      - name: Cache pdfium binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pdf2md
+          key: pdfium-auto-v0.3-chromium-7690
+
+      # ---------- step 2: fmt / clippy / tests ----------
+      - name: 2/10  cargo fmt --check
+        run: cargo fmt --check
+
+      - name: 2/10  cargo clippy (workspace minus evidence-desktop)
+        # `evidence-desktop` is excluded for the same reason as in ci.yml's
+        # clippy job — Tauri WebView system deps aren't on the default runner.
+        run: cargo clippy --workspace --exclude evidence-desktop --all-targets -- -D warnings
+
+      - name: 2/10  cargo test -p evidence-eval
+        run: cargo test -p evidence-eval
+
+      # ---------- step 3: dataset lint ----------
+      - name: 3/10  Dataset lint
+        run: cargo run --quiet -p evidence-eval -- lint crates/evidence-eval/datasets/fda_label_bench.toml
+
+      # ---------- step 5: no fabrication-flag tokens ----------
+      # Mirrors preflight.sh step 5 exactly. Keep regex + exclude list in sync.
+      - name: 5/10  No fabrication-flag tokens in docs/ or paper/
+        run: |
+          FLAG_RE='\[verify\]|\[unverified|TODO|FIXME|FILL_IN|Lorem'
+          EXCLUDE_FLAG='acl\.sty|acl_natbib\.bst|SUBMISSION_RUNBOOK\.md|natural-failure-harness\.md|natural-failure-protocol\.md'
+          HITS="$(grep -rnE "$FLAG_RE" docs/ paper/ 2>/dev/null | grep -vE "$EXCLUDE_FLAG" || true)"
+          if [ -n "$HITS" ]; then
+            printf '%s\n' "$HITS" >&2
+            echo "fabrication-flag tokens found (see lines above)" >&2
+            exit 1
+          fi
+
+      # ---------- step 6: no overclaim language ----------
+      # Mirrors preflight.sh step 6 exactly. Keep regex + allowlist in sync.
+      - name: 6/10  No overclaim language
+        run: |
+          OVER_RE='\bproven\b|perfectly disjoint|strongest possible|machine-drafted|machine-assembled'
+          ALLOW_OVER='docs/paper/PROVENANCE\.md|docs/paper/.*_PROVENANCE\.md|docs/paper/faithfulness-audit\.md|docs/paper/citation-audit\.md'
+          HITS="$(grep -rniE "$OVER_RE" docs/ README.md 2>/dev/null | grep -vE "$ALLOW_OVER" || true)"
+          if [ -n "$HITS" ]; then
+            printf '%s\n' "$HITS" >&2
+            echo "overclaim language found (see lines above)" >&2
+            exit 1
+          fi
+
+      # ---------- step 7: no unexplained AI-tool attribution ----------
+      # Mirrors preflight.sh step 7 exactly. Keep regex + allowlist in sync.
+      - name: 7/10  No unexplained AI-tool attribution
+        run: |
+          ATTR_RE='co-authored|claude'
+          ALLOW_ATTR='Claude Haiku|docs/paper/.*PROVENANCE\.md|docs/paper/DATASHEET\.md|docs/paper/INTEGRITY\.md'
+          HITS="$(grep -rniE "$ATTR_RE" docs/ README.md crates/evidence-eval/src 2>/dev/null \
+                  | grep -viE "$ALLOW_ATTR" || true)"
+          if [ -n "$HITS" ]; then
+            printf '%s\n' "$HITS" >&2
+            echo "unexplained AI-tool attribution found (see lines above)" >&2
+            exit 1
+          fi
