@@ -1,0 +1,45 @@
+\documentclass[11pt]{article}
+
+% ----------------------------------------------------------------------
+% Camera-ready (non-anonymous) driver.
+% For an anonymous submission build, compile anon-main.tex instead;
+% it overrides \PaperAuthor/\PaperAffil/\PaperEmail and the acl review flag.
+% ----------------------------------------------------------------------
+
+% Author/affiliation macros — anon-main.tex sets these before \input.
+\providecommand{\PaperAuthor}{Bilal Sabry}
+\providecommand{\PaperAffil}{Krux AI}
+\providecommand{\PaperEmail}{\texttt{bilalsabry22@gmail.com}}
+
+% "final" for camera-ready; "review" for anonymous submission.
+\providecommand{\aclmode}{final}
+\PassOptionsToPackage{\aclmode}{acl}
+\usepackage{acl}
+
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{url}
+
+\title{Three Rules for a Citation: Decomposing Faithfulness in Retrieval-Augmented Generation}
+
+\author{\PaperAuthor \\
+  \PaperAffil \\
+  \PaperEmail}
+
+\begin{document}
+\maketitle
+
+\input{body}
+
+\bibliographystyle{acl_natbib}
+\bibliography{refs}
+
+\end{document}

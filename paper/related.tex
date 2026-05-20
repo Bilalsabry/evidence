@@ -1,0 +1,94 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Attribution and faithfulness.}
+The dominant operational definition of attribution is AIS
+\citep{rashkin2023ais}, which judges whether a model statement is
+fully derivable from an identified source via a two-stage human
+protocol (interpretability, then an attribution rating). AIS bundles
+all three of our constraints into a single human judgment: the source
+is shown to the rater, so existence and in-context grounding are
+satisfied tautologically and only support is genuinely assessed.
+Attributed QA \citep{bohnet2022attributedqa} defines the
+attributed-answering task and benchmarks retrieve-then-generate
+variants, but reuses AIS for evaluation and inherits its bundling.
+TRUE \citep{honovich2022true} standardizes factual-consistency
+evaluation and finds large-scale NLI and question-generation-and-%
+answering to be strong and complementary; it establishes the
+NLI-for-faithfulness lineage our support gate draws on but is
+orthogonal to attribution decomposition.
+
+\paragraph{RAG citation benchmarks.}
+ALCE \citep{gao2023alce} is the standard generation-with-citations
+benchmark; its redundancy-aware citation precision measures support
+carefully via an NLI model, but citations are integer indices into the
+retrieved set by construction ($c_{i,j} \in D$), so existence and
+in-context grounding are \emph{assumed true by construction and cannot
+be measured}. HAGRID \citep{kamalloo2023hagrid} reuses the ALCE-style
+metric on a human-LLM collaborative corpus and carries the same
+single-signal limitation. ExpertQA \citep{malaviya2024expertqa}
+provides expert-curated questions with multi-attribute evaluation, but
+attribution is one bundled dimension among several and is not itself
+decomposed into existence, in-context, and support.
+
+\paragraph{Span-level and constrained citing.}
+GopherCite \citep{menick2022gophercite} trains a model to answer with
+verbatim quotes and \emph{enforces} quote-document fidelity through
+constrained decoding rather than measuring it: existence and
+in-context grounding cannot fail by construction, and its primary
+``Supported \& Plausible'' metric bundles support with plausibility.
+It shows the field has groped toward gate-1/gate-2 enforcement without
+naming it as a separable, measurable concern.
+
+\paragraph{Verifiability and post-hoc revision.}
+\citet{liu2023verifiability} audit commercial generative search
+engines and report that only about half of generated sentences are
+fully supported by their citations; it is closest in spirit to this
+work but notes URL non-resolution only in passing and cannot measure
+in-context grounding, since deployed search engines do not expose a
+retrieved set. RARR \citep{gao2023rarr} post-edits model output to fix
+unsupported content, operating on support with revise-the-output
+semantics --- the inverse of our refuse-or-resolve deployment
+philosophy. Self-RAG \citep{asai2024selfrag} is the closest existing
+decomposition: it trains reflection tokens that separately rate
+passage relevance (\texttt{IsRel}) and three-valued support
+(\texttt{IsSup}). But \texttt{IsRel} measures retrieval
+\emph{relevance}, not whether a cited span was in the prompt for
+\emph{this} query, so it addresses neither existence nor our
+in-context gate; and both signals are \emph{internalized} trained
+tokens, not \emph{externalized} validator gates that refuse the
+output.
+
+\paragraph{Frameworks and methodology.}
+RAGAS \citep{es2024ragas} is a reference-free RAG evaluation framework
+whose faithfulness metric is essentially our support gate via
+LLM-as-judge, while its context-relevance metric evaluates retrieval
+rather than citation grounding; we position the three-rule
+decomposition as the right granularity for RAGAS-shaped tools to
+adopt. The synthetic failure-injection design follows the contrast-set
+methodology of \citet{gardner2020contrast}. Recent agentic-citation
+work is adjacent but disjoint: CiteGuard \citep{choi2025citeguard}
+reframes citation evaluation as predicting which academic paper a
+human would cite (the CiteME task), a recommendation problem rather
+than grounding validation; and accounts of citation hallucination as
+post-rationalization rather than genuine reliance
+\citep{wallat2024correctness} operate on the model's reasoning to
+explain \emph{why} failures occur, complementary to our
+validator-boundary question of \emph{which} failure occurred.
+
+\paragraph{The gap.}
+No prior work separates existence, in-context, and support as three
+independently \emph{measured} gates at the validator boundary, and
+none demonstrates that they catch distinct, non-overlapping classes of
+citation errors. The closest near-misses either bundle the three into
+one judgment (AIS), assume two of them away by construction (ALCE,
+GopherCite), internalize a partial decomposition as trained signals
+(Self-RAG), or study a setting where in-context grounding is
+unmeasurable \citep{liu2023verifiability}. This paper measures all
+three as external, refusing gates and shows their catch sets are
+disjoint on the benchmark. We claim citation \emph{correctness} at the
+validator boundary, not causal faithfulness: the in-context gate shows
+a span was \emph{available} to the model, not that the model
+\emph{relied} on it, and post-rationalization remains possible
+\citep[cf.][]{wallat2024correctness} --- causal reliance is a
+separate, out-of-scope dimension.

@@ -1,0 +1,313 @@
+\begin{abstract}
+A large literature scores citation correctness as a single signal. We
+decompose it into three operationally independent constraints:
+whether the cited span \textbf{exists} in the corpus, whether it was
+\textbf{in-context} (in the retrieval set the model was shown for this
+query), and whether it \textbf{supports} the claim. We externalize
+each as a validator gate that refuses output rather than degrading it,
+and build a benchmark of 254 FDA-drug-label seeds expanded to 1{,}270
+examples via named matched-pair failure-injection operators. On the v2
+injected FDA-label benchmark --- a controlled benchmark, not a
+prevalence study --- the structural rules (existence, in-context) are
+exact and model-independent (F1 = 1.000); the three rules catch fully
+disjoint classes of error (100\% by the operational blindness
+measure); and the composed validator improves should-refuse F1 by
+$+56$ points over the best non-composed baseline. The semantic support
+gate, measured separately, catches genuine failures at $0.99$ recall,
+but a strong NLI model still conservatively over-refuses true
+claims --- a finding we measure rather than hide, and which motivates
+treating support as its own refuse-or-resolve gate. We release the
+system, the benchmark, and one-command reproduction.
+
+\paragraph{Scope.} All results are on a controlled, failure-injected,
+single-domain (FDA drug-label) benchmark; they characterize validator
+behavior under matched-pair injected failures, not real-world failure
+prevalence. Structural rules (existence, in-context) are exact and
+model-independent; the support gate is a conservative, high-recall
+safety gate, not a high-precision throughput filter.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Consider a model that writes \emph{``the trial enrolled 1000 patients''}
+and attaches a citation to a span reading \emph{``the trial enrolled 240
+patients.''} The citation is well-formed, the link resolves, and the
+cited span is topically relevant --- yet the claim is false. Most
+existing attribution metrics score this as ``cited with high
+relevance.'' That conflation is the problem this paper addresses.
+
+``Is this citation correct?'' is treated as one signal, but it is
+three. A citation is trustworthy only if (1) the cited span
+\textbf{exists}, (2) it was \textbf{in the context} the model was
+given for this query, and (3) it \textbf{supports} the claim. These
+fail independently: a fabricated span ID fails (1); a real span the
+model was never shown fails (2) while passing (1); a real, shown, but
+irrelevant span passes (1) and (2) and fails (3). Conflating them into
+one score hides the practitioner's actual question --- \emph{which
+rule failed?} --- and the three failures have completely different
+fixes (decoding/format, retrieval-context, reasoning).
+
+\paragraph{Contributions.}
+(i) We decompose citation correctness into existence, in-context, and
+support, and externalize each as a validator gate that refuses rather
+than degrades. (ii) We build a public FDA-drug-label benchmark with
+controlled, named matched-pair failure injection (254 seeds $\to$
+1{,}270 labeled examples). (iii) We show, under matched-pair failure
+injection, that the three rules catch \textbf{non-overlapping} classes
+of error (fully disjoint on the v2 injected FDA-label benchmark, 100\%
+by the operational blindness measure) and that the composed validator
+improves should-refuse F1 by \textbf{$+56$ points} over the best
+non-composed baseline; the structural rules are exact and
+model-independent.
+
+Section~\ref{sec:related} places the work; Section~\ref{sec:rules}
+defines the rules; Section~\ref{sec:bench} the benchmark;
+Section~\ref{sec:exp} the experiments; Section~\ref{sec:limits}
+limitations; Section~\ref{sec:conc} conclusion.
+
+\input{related}
+
+\section{The Three Rules}
+\label{sec:rules}
+
+\subsection{Formal definitions}
+\label{sec:rules-formal}
+
+Let $C$ be the corpus of spans. For a query $q$, let $R_q \subseteq C$
+be the retrieval set the model was shown. Let $s$ be a cited span and
+$y$ the claim sentence. The three gates:
+\begin{align*}
+  \mathrm{exists}(s, C) &\equiv s \in C, \\
+  \mathrm{in\_context}(s, R_q) &\equiv s \in R_q, \\
+  \mathrm{supports}(s, y) &\equiv \mathrm{NLI}(\mathrm{text}(s), y) = \mathrm{entailment}.
+\end{align*}
+The validator accepts the citation $(s, y)$ iff
+$\mathrm{exists} \land \mathrm{in\_context} \land \mathrm{supports}$,
+and otherwise refuses with the typed reason of the first failing gate.
+$\mathrm{in\_context}$ establishes that $s$ was \emph{available} to
+the model, not that the model \emph{used} it (see Scope of the claim,
+below).
+
+\subsection{Existence}
+The cited identifier must resolve to a real span in the corpus.
+Failure: a fabricated pointer into nothing. Implementation: a
+primary-key lookup, $O(1)$, deterministic.
+
+\subsection{In-context}
+The cited span must have been in the retrieval set assembled for
+\emph{this} query --- the closed-loop constraint: a model may only
+cite what it was shown. Failure: citing a real span the model was not
+given this turn (back-filled from parametric memory). Implementation:
+a per-prompt allowed-span \texttt{HashSet}, deterministic.
+
+\subsection{Support}
+The cited span must entail the claim. Implementation: an NLI
+cross-encoder over \texttt{(span\_text, sentence)} pairs producing a
+three-class verdict (entailment / neutral / contradiction). The only
+model-dependent gate.
+
+\subsection{Composition and strict-wins}
+The gates run in order --- existence, then in-context, then
+support --- so each cleanly attributes one failure class (a class is
+owned by the first gate that can see it). Support aggregation is
+\textbf{strict-wins}: any contradiction wins, else any neutral wins,
+else support. ``Every cited span must hold on its own'' is a
+conservative safety stance; a concatenated-evidence alternative is
+noted as future work, not shipped.
+
+\subsection{Validator output and deployment}
+Refusal types: \texttt{Uncited}, \texttt{UnknownSpan} (existence),
+\texttt{OutOfContext} (in-context), \texttt{Unsupported},
+\texttt{Contradicted} (support). Deployment philosophy is
+\textbf{refuse-or-resolve} --- never silently degrade. A conservative
+gate is the correct default when the cost of a confidently-wrong
+citation is high (the target domain is pharmaceutical text).
+
+\subsection*{Scope of the claim: citation correctness, not causal faithfulness}
+
+We validate citation \emph{correctness} at the output boundary. The
+in-context gate verifies the cited span was in the retrieval set the
+model was shown; it does \textbf{not} verify the model causally relied
+on that span --- a model can post-rationalize a well-formed citation.
+Causal reliance (counterfactual span removal, attribution tracing) is
+a distinct fourth dimension, explicitly out of scope. This boundary is
+deliberate: existence, in-context, and support are checkable at the
+validator without model internals; causal faithfulness is not. Recent
+work separates citation correctness from faithfulness and reports
+substantial post-rationalization \citep{wallat2024correctness}; our
+claims are confined to correctness.
+
+\section{Benchmark}
+\label{sec:bench}
+
+\paragraph{Corpus.}
+50 public-domain FDA drug labels from DailyMed, fetched via
+\texttt{evidence-eval fetch dailymed} (idempotent; manifest with
+per-file SHA-256). Public domain, high-stakes, factually dense ---
+labels carry crisp doses, concentrations, and contraindications.
+
+\paragraph{Seeds.}
+254 \texttt{valid} seed examples, each a self-contained world:
+\texttt{corpus\_spans}, \texttt{prompt\_chunks} (what the model was
+shown), \texttt{response\_sentences} (the fixture answer with
+\texttt{cited\_spans}), and author-supplied
+\texttt{support\_mutations}. Fact types are rotated (quantitative,
+contraindication, indication, administration, multi-span). Authoring
+provenance and limitations are documented in a datasheet
+(\texttt{fda\_label\_bench\_PROVENANCE.md}).
+
+\paragraph{Verification and the v1\,$\to$\,v2 audit.}
+Structural validity is machine-checked by \texttt{evidence-eval lint}
+(whole-corpus: 0 diagnostics). We report one methodological event
+because it bears on validity. An initial benchmark (v1) showed a 49\%
+false-refusal rate on valid examples; a hand audit against source PDFs
+traced the cause to an authoring artifact (line-wrapped PDF spans
+cited as fragments), not a property of the validator. We corrected the
+guideline, re-authored the seeds (v2), and repeated the run; the
+residual decomposed into ${\sim}15$ points fixed bug and ${\sim}29\%$
+genuine NLI conservatism. Catching this by audit is itself part of the
+evidence base (\texttt{benchmark-results.md}).
+
+\paragraph{Failure injection (named operators, \citealp{gardner2020contrast}).}
+From each valid seed, \texttt{evidence-eval inject} derives labeled
+failures:
+\begin{itemize}
+  \item \emph{Existence:} rewrite a citation to a span ID absent from
+    the corpus.
+  \item \emph{In-context:} duplicate a span's text at a fresh ID
+    outside the prompt, repoint the citation --- the duplicate text
+    controls the relevance confound (a true matched pair: only
+    in-context status changed).
+  \item \emph{Support:} apply an author-supplied mutation labeled
+    \texttt{unsupported} (off-topic substitution) or
+    \texttt{contradicted} (number/negation/entity perturbation) on the
+    same cited span.
+\end{itemize}
+254 seeds $\to$ 1{,}270 examples (254 valid + 1{,}016 injected).
+Operators are named, deterministic, individually unit-tested.
+
+\paragraph{Natural-failure supplement \texttt{[OPEN --- not run]}.}
+Real LLM outputs (no injection), human-graded into the taxonomy,
+defending against ``injected failures are too easy.'' Requires a
+held-out corpus, a generation model, and human labeling ---
+deliberately not automated.
+
+\section{Experiments}
+\label{sec:exp}
+
+Four nested policies: \texttt{vanilla} $\subset$
+\texttt{existence\_only} $\subset$ \texttt{two\_gate} $\subset$
+\texttt{three\_gate}. Support gate evaluated under distilbert-MNLI and
+DeBERTa-v3-MNLI.
+
+\begin{itemize}
+  \item \textbf{\S5.1 Model effect}
+    (\texttt{nli-comparison.md}):
+    distilbert\,$\to$\,DeBERTa moves three-gate agreement
+    $1{,}106 \to 1{,}166/1{,}270$; valid-retention
+    $167 \to 181/254$; structural classes $\Delta = 0$ (rules 1--2
+    model-independent).
+  \item \textbf{\S5.2 Per-rule isolation}
+    (\texttt{rule-metrics.md}):
+    existence F1 = \textbf{1.000}, in-context F1 = \textbf{1.000}
+    (exact, model-independent); support F1 = 0.929 (recall 0.992,
+    precision 0.873 --- the precision gap is the \S5.1 conservatism,
+    not a missed failure).
+  \item \textbf{\S5.3 Non-overlap} (the kernel): out-of-context
+    accepted by existence-only $254/254$ (100\%); support failures
+    accepted by two-gate $508/508$ (100\%). \textbf{Fully disjoint on
+    the injected benchmark (100\% by the operational blindness
+    measure)} --- each failure class is \emph{invisible} to the rules
+    preceding its gate. This is a measured blindness property (OOC
+    failures are invisible to the existence gate; support failures are
+    invisible to the two-gate policy), an empirical property of the
+    data --- \emph{not} an artifact of the nested-policy construction.
+  \item \textbf{\S5.4 Composition}: F1 ladder
+    $0.000 \to 0.400 \to 0.667 \to \mathbf{0.963}$; \textbf{additive
+    lift $+56.3$ points} over the best non-composed baseline
+    (conservative lower bound --- nested policies).
+  \item \textbf{\S5.5 ALCE comparison \texttt{[OPEN]}},
+    \textbf{\S5.6 natural-failure \texttt{[OPEN]}},
+    \textbf{\S5.7 cost \texttt{[OPEN]}} --- not yet run; no fabricated
+    numbers.
+\end{itemize}
+
+The decomposition is justified iff each rule isolates its class and
+the rules don't overlap; both hold on the v2 injected FDA-label
+benchmark with hard numbers. The structural core is exact and
+model-independent; the one soft number is the separately-measured
+support-gate conservatism.
+
+\section{Limitations}
+\label{sec:limits}
+
+\begin{itemize}
+  \item \textbf{Domain.} FDA labels only. No cross-domain
+    generalization claim.
+  \item \textbf{Size.} 254 seeds / 1{,}270 examples --- workshop-%
+    appropriate, not main-conference scale.
+  \item \textbf{Benchmark provenance.} Seeds are AI-assisted-authored
+    from a fixed guideline and are therefore structurally more
+    homogeneous than independent hand curation. We disclose this
+    openly. The structural results (\S5.2 existence/in-context, all of
+    \S5.3) are authoring-independent: existence and in-context are
+    exact set operations whose outcomes do not depend on how seeds
+    were written. Authoring homogeneity bears only on the support-gate
+    numbers, and we flag it as a fair reviewer question. A sample was
+    audited against source PDFs; an exhaustive human pass remains
+    future work. (Datasheet:
+    \texttt{fda\_label\_bench\_PROVENANCE.md}.)
+  \item \textbf{NLI error propagation.} The support gate inherits the
+    NLI model's errors; we measure NLI behavior as a separate column
+    rather than bury it (the support precision figure \emph{is} that
+    measurement).
+  \item \textbf{Injection by construction.} \S5.6 is the intended
+    defense and is not yet run.
+  \item \textbf{No human-factors claim.} We do not measure user trust
+    or downstream decision quality.
+  \item We measure citation \emph{correctness}, not causal citation
+    faithfulness; the in-context gate proves availability, not
+    reliance (post-rationalization is possible). This is scoped
+    explicitly in \S\ref{sec:rules}.
+  \item Headline F1/lift numbers come from a class-balanced injected
+    set where failures are prevalent; real RAG has lower failure
+    prevalence where false-refusal cost dominates. We report the
+    support gate's false-refusal rate explicitly rather than optimize
+    it away.
+\end{itemize}
+
+\section{Conclusion and Future Work}
+\label{sec:conc}
+
+Citation correctness decomposes into three operationally independent
+rules. On the v2 injected FDA-label benchmark --- a controlled
+benchmark, not a real-world prevalence study --- the structural rules
+are exact and model-independent, the rules catch fully disjoint error
+classes (100\% by the operational blindness measure), and the
+composition beats the best single rule by a wide margin. The semantic
+support gate is the open frontier: it catches real failures but is
+conservative, which we measure rather than hide.
+Future work:
+(1) larger, cross-domain, human-curated benchmark;
+(2) clause-level support decomposition (FActScore-style) to attack the
+support-precision ceiling;
+(3) the natural-failure study (claim 4) and ALCE translation;
+(4) production integration with user studies.
+The system, benchmark, and one-command reproduction are released as
+\texttt{evidence} (open source; version pinned to these experiments
+--- see \texttt{PAPER\_EXPLAINER.md} and \S\ref{sec:conc} artifact
+appendix).
+
+\section*{Authoring Disclosure}
+
+Portions of this manuscript and the benchmark seed authoring were
+prepared with AI assistance from a fixed guideline; the lead author
+designed the methodology, conducted the v1\,$\to$\,v2 audit, verified
+all reported numbers against the released artifacts, and is
+responsible for all claims. The structural results
+(\S\ref{sec:exp}: existence, in-context, non-overlap) are exact set
+operations whose outcomes do not depend on how seeds were written;
+authoring homogeneity bears only on the support-gate numbers, as noted
+in \S\ref{sec:limits}.
+

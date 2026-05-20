@@ -23,6 +23,7 @@ pub mod inject;
 pub mod latency;
 pub mod lint;
 pub mod natfail;
+pub mod natfail_gen;
 pub mod report;
 pub mod runner;
 pub mod stats;
@@ -41,6 +42,12 @@ pub use latency::{measure, render_latency, LatencyMeasurement, Pass};
 pub use lint::{has_errors, lint, render_report, Diagnostic, Severity};
 pub use natfail::{
     prepare_worksheet, render_worksheet, worksheet_rows, ValidatorVerdict, WorksheetRow,
+};
+pub use natfail_gen::{
+    build_chunk_text, build_prompt, number_spans, parse_answer, plan_tasks, render_dry_run_plan,
+    render_examples_toml, run as run_natfail_gen, GenConfig, GenError, GenSummary,
+    GeneratedExample, NumberedSpan, OllamaCallError, OllamaClient, ParsedAnswer, PlannedTask,
+    Question, QuestionsFile, UreqOllamaClient, DEFAULT_OLLAMA_URL,
 };
 pub use report::{compare_report, rule_metrics, write_markdown, Prf, Report};
 pub use runner::{run, run_with_mode, run_with_model, Outcome, Policy, RunResult, SupportMode};

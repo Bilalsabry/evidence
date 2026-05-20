@@ -51,7 +51,7 @@ the prompt for *this* query, so it addresses neither existence nor our
 in-context gate; and both signals are *internalized* trained tokens, not
 *externalized* validator gates that refuse the output.
 
-**Frameworks and methodology.** RAGAS (Es et al., 2023) is a
+**Frameworks and methodology.** RAGAS (Es et al., 2024) is a
 reference-free RAG evaluation framework whose faithfulness metric is
 essentially our support gate via LLM-as-judge, while its context-relevance
 metric evaluates retrieval rather than citation grounding; we position the
@@ -111,7 +111,7 @@ out-of-scope dimension.
   Models to Generate Text with Citations. *Proceedings of the 2023
   Conference on Empirical Methods in Natural Language Processing
   (EMNLP)*, 6465–6488. arXiv:2305.14627.
-- Gardner, M., Artzi, Y., Basmova, V., Berant, J., Bogin, B., Chen, S.,
+- Gardner, M., Artzi, Y., Basmov, V., Berant, J., Bogin, B., Chen, S.,
   Dasigi, P., Dua, D., Elazar, Y., Gottumukkala, A., Gupta, N., Hajishirzi,
   H., Ilharco, G., Khashabi, D., Lin, K., Liu, J., Liu, N. F., Mulcaire,
   P., Ning, Q., Singh, S., Smith, N. A., Subramanian, S., Tsarfaty, R.,
