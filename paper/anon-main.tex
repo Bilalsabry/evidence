@@ -1,0 +1,43 @@
+\documentclass[11pt]{article}
+
+% ----------------------------------------------------------------------
+% Anonymous submission driver.
+% Mirrors main.tex but with the acl "review" option and Anonymous author.
+% Shares body.tex / related.tex / refs.bib with main.tex.
+% ----------------------------------------------------------------------
+
+\newcommand{\PaperAuthor}{Anonymous}
+\newcommand{\PaperAffil}{Anonymous Institution}
+\newcommand{\PaperEmail}{\texttt{anonymous@example.org}}
+\newcommand{\aclmode}{review}
+
+\PassOptionsToPackage{\aclmode}{acl}
+\usepackage{acl}
+
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{url}
+
+\title{Three Rules for a Citation: Decomposing Faithfulness in Retrieval-Augmented Generation}
+
+\author{\PaperAuthor \\
+  \PaperAffil \\
+  \PaperEmail}
+
+\begin{document}
+\maketitle
+
+\input{body}
+
+\bibliographystyle{acl_natbib}
+\bibliography{refs}
+
+\end{document}

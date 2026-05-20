@@ -27,8 +27,9 @@ use clap::{Parser, Subcommand};
 use evidence_eval::{
     audit_report, compare_report, fetch_dailymed, has_errors, has_missing, inject_all_variants,
     lint, load_dataset, load_dataset_path, measure, normalize, prepare_worksheet, render_for_pdf,
-    render_latency, render_report, render_stats, rule_metrics, run_with_model, write_markdown,
-    AuthorOptions, DatasetStats, FetchConfig, InjectionConfig, Report, SupportMode, UreqClient,
+    render_latency, render_report, render_stats, rule_metrics, run_natfail_gen, run_with_model,
+    write_markdown, AuthorOptions, DatasetStats, FetchConfig, GenConfig, GenError, InjectionConfig,
+    Report, SupportMode, UreqClient, UreqOllamaClient, DEFAULT_OLLAMA_URL,
 };
 use std::time::Duration;
 
@@ -152,6 +153,40 @@ enum Command {
         /// Optional output path for the worksheet markdown. Default: stdout.
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+    /// Generate real model answers via a local Ollama server and emit a
+    /// TOML file in the natfail schema. Removes the only manual step in
+    /// Phase 3 of `docs/paper/SUBMISSION_RUNBOOK.md` — converting raw
+    /// Ollama outputs into `model_answers.toml`. The `class` field for
+    /// each example is left as a comment placeholder for human
+    /// annotators; the result is NOT auto-graded. Pipe the output to
+    /// `evidence-eval natfail-prep` after labeling.
+    NatfailGen {
+        /// Directory holding the PDFs referenced by the questions file.
+        #[arg(long)]
+        pdf_dir: PathBuf,
+        /// TOML file with `[[question]]` entries (`pdf`, `prompt`).
+        #[arg(long)]
+        questions: PathBuf,
+        /// Comma-separated list of Ollama model tags (e.g.
+        /// `llama3.1:8b,qwen2.5:7b`). Each model is asked every
+        /// question against every PDF.
+        #[arg(long)]
+        models: String,
+        /// Output path for the generated TOML. Default: stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Override the Ollama base URL.
+        #[arg(long, default_value = DEFAULT_OLLAMA_URL)]
+        ollama_url: String,
+        /// Print the planned (model, pdf, question) tuples without
+        /// calling Ollama. Useful for confirming the question set.
+        #[arg(long)]
+        dry_run: bool,
+        /// Cap the number of (model, pdf, question) tuples processed.
+        /// Useful during development.
+        #[arg(long)]
+        limit: Option<usize>,
     },
     /// Generate matched-pair failure variants from a dataset of valid
     /// seeds. Each valid example yields two structural injections
@@ -287,6 +322,23 @@ fn real_main() -> Result<ExitCode> {
             nli_model,
             output,
         } => natfail_prep_command(&dataset, real_nli, nli_model.as_deref(), output.as_deref()),
+        Command::NatfailGen {
+            pdf_dir,
+            questions,
+            models,
+            output,
+            ollama_url,
+            dry_run,
+            limit,
+        } => natfail_gen_command(
+            &pdf_dir,
+            &questions,
+            &models,
+            output.as_deref(),
+            &ollama_url,
+            dry_run,
+            limit,
+        ),
         Command::Inject { input, output } => inject_command(&input, &output),
         Command::Fetch { source } => match source {
             FetchSource::Dailymed {
@@ -680,6 +732,67 @@ fn toml_str(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+fn natfail_gen_command(
+    pdf_dir: &std::path::Path,
+    questions: &std::path::Path,
+    models_csv: &str,
+    output: Option<&std::path::Path>,
+    ollama_url: &str,
+    dry_run: bool,
+    limit: Option<usize>,
+) -> Result<ExitCode> {
+    let models: Vec<String> = models_csv
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if models.is_empty() {
+        anyhow::bail!("--models must list at least one Ollama model tag");
+    }
+    let config = GenConfig {
+        pdf_dir: pdf_dir.to_path_buf(),
+        questions_path: questions.to_path_buf(),
+        models,
+        output: output.map(std::path::Path::to_path_buf),
+        ollama_url: ollama_url.to_string(),
+        dry_run,
+        limit,
+    };
+    let client = UreqOllamaClient::new(ollama_url.to_string());
+    let mut log = std::io::stderr();
+    match run_natfail_gen(&config, &client, &mut log) {
+        Ok(summary) => {
+            eprintln!(
+                "natfail-gen: {} ok, {} skipped (model-missing={}, parse={}, transport={}, pdf={}) of {} total",
+                summary.ok,
+                summary.skipped_model_missing
+                    + summary.skipped_parse
+                    + summary.skipped_transport
+                    + summary.skipped_pdf,
+                summary.skipped_model_missing,
+                summary.skipped_parse,
+                summary.skipped_transport,
+                summary.skipped_pdf,
+                summary.total,
+            );
+            if let Some(p) = summary.output_path {
+                eprintln!("wrote {}", p.display());
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Err(GenError::OllamaDown { url, message }) => {
+            eprintln!("error: Ollama unreachable at {url}: {message}");
+            eprintln!("hint: start it with `ollama serve` (default port 11434)");
+            Ok(ExitCode::from(4))
+        }
+        Err(GenError::NoSuccessfulGenerations) => {
+            eprintln!("error: no successful generations — see skip log above");
+            Ok(ExitCode::from(5))
+        }
+        Err(e) => Err(e).context("natfail-gen"),
+    }
 }
 
 fn class_label(class: evidence_eval::HallucinationClass) -> &'static str {
