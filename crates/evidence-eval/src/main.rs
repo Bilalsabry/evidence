@@ -229,6 +229,9 @@ enum Command {
         /// (falling back to `<corpus>/*.pdf` if `labels/` has none).
         #[arg(long)]
         corpus: PathBuf,
+        /// Optional output path for the markdown report. Default: stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
     /// Print descriptive stats for a dataset: class balance, per-example
     /// shape, and what `inject` will materialize. Read-only; never fails
@@ -347,9 +350,11 @@ fn real_main() -> Result<ExitCode> {
                 delay_ms,
             } => fetch_dailymed_command(&output, limit, delay_ms),
         },
-        Command::AuditFaithfulness { dataset, corpus } => {
-            audit_faithfulness_command(&dataset, &corpus)
-        }
+        Command::AuditFaithfulness {
+            dataset,
+            corpus,
+            output,
+        } => audit_faithfulness_command(&dataset, &corpus, output.as_deref()),
         Command::Lint { dataset } => lint_command(&dataset),
         Command::Stats { dataset } => stats_command(&dataset),
         Command::Author {
@@ -388,6 +393,7 @@ fn author_command(
 fn audit_faithfulness_command(
     dataset_path: &std::path::Path,
     corpus_dir: &std::path::Path,
+    output: Option<&std::path::Path>,
 ) -> Result<ExitCode> {
     let dataset = load_dataset_path(dataset_path).context("loading dataset for audit")?;
 
@@ -416,7 +422,13 @@ fn audit_faithfulness_command(
     }
     let corpus_norm = normalize(&raw);
 
-    print!("{}", audit_report(&dataset, &corpus_norm));
+    let md = audit_report(&dataset, &corpus_norm);
+    if let Some(out_path) = output {
+        std::fs::write(out_path, md.as_bytes()).context("writing audit report")?;
+        eprintln!("wrote audit to {}", out_path.display());
+    } else {
+        print!("{md}");
+    }
 
     if has_missing(&dataset, &corpus_norm) {
         Ok(ExitCode::from(2))
