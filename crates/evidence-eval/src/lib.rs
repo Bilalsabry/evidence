@@ -33,6 +33,7 @@ pub use author::{render_for_pdf, render_template, AuthorError, AuthorOptions};
 pub use dataset::{
     load_dataset, load_dataset_path, Dataset, Example, HallucinationClass, SupportMutation,
 };
+pub use evidence_core::query::SupportAggregation;
 pub use fetch::{fetch_dailymed, FetchConfig, FetchError, HttpClient, Manifest, UreqClient};
 pub use inject::{
     inject_all_variants, inject_existence, inject_in_context, inject_support, InjectionConfig,
@@ -50,5 +51,7 @@ pub use natfail_gen::{
     Question, QuestionsFile, UreqOllamaClient, DEFAULT_OLLAMA_URL,
 };
 pub use report::{compare_report, rule_metrics, write_markdown, Prf, Report};
-pub use runner::{run, run_with_mode, run_with_model, Outcome, Policy, RunResult, SupportMode};
+pub use runner::{
+    run, run_with_mode, run_with_model, run_with_options, Outcome, Policy, RunResult, SupportMode,
+};
 pub use stats::{render_stats, DatasetStats, Dist};

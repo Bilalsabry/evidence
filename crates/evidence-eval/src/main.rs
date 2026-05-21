@@ -23,13 +23,14 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use evidence_eval::{
     audit_report, compare_report, fetch_dailymed, has_errors, has_missing, inject_all_variants,
     lint, load_dataset, load_dataset_path, measure, normalize, prepare_worksheet, render_for_pdf,
     render_latency, render_report, render_stats, rule_metrics, run_natfail_gen, run_with_model,
-    write_markdown, AuthorOptions, DatasetStats, FetchConfig, GenConfig, GenError, InjectionConfig,
-    Report, SupportMode, UreqClient, UreqOllamaClient, DEFAULT_OLLAMA_URL,
+    run_with_options, write_markdown, AuthorOptions, DatasetStats, FetchConfig, GenConfig,
+    GenError, InjectionConfig, Report, SupportAggregation, SupportMode, UreqClient,
+    UreqOllamaClient, DEFAULT_OLLAMA_URL,
 };
 use std::time::Duration;
 
@@ -42,6 +43,29 @@ use std::time::Duration;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+}
+
+/// CLI selector for the support gate's evidence-aggregation strategy
+/// (mirrors `evidence_core::query::SupportAggregation`). Only affects
+/// `--real-nli` runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+enum SupportAgg {
+    /// Per-span strict-wins (default): classify each cited span, worst
+    /// verdict wins.
+    #[default]
+    Strict,
+    /// Concatenated-evidence: join cited spans into one premise, single
+    /// NLI call.
+    Concat,
+}
+
+impl From<SupportAgg> for SupportAggregation {
+    fn from(a: SupportAgg) -> Self {
+        match a {
+            SupportAgg::Strict => SupportAggregation::StrictWins,
+            SupportAgg::Concat => SupportAggregation::Concatenated,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -66,6 +90,12 @@ enum Command {
         /// `config.json` with an `id2label` MNLI permutation.
         #[arg(long, value_name = "HF_REPO")]
         nli_model: Option<String>,
+        /// Support-gate evidence aggregation for `--real-nli`: `strict`
+        /// (per-span strict-wins, default) or `concat` (join cited spans
+        /// into one premise, single NLI call). Ignored without
+        /// `--real-nli`.
+        #[arg(long, value_enum, default_value_t = SupportAgg::default())]
+        support_agg: SupportAgg,
     },
     /// Run a dataset under two NLI models (both real-NLI) and emit the
     /// §5.1 model-comparison table: per-class three-gate agreement for
@@ -101,6 +131,12 @@ enum Command {
         /// Override the NLI model repo (HF id) used by `--real-nli`.
         #[arg(long, value_name = "HF_REPO")]
         nli_model: Option<String>,
+        /// Support-gate evidence aggregation for `--real-nli`: `strict`
+        /// (per-span strict-wins, default) or `concat` (join cited spans
+        /// into one premise, single NLI call). Ignored without
+        /// `--real-nli`.
+        #[arg(long, value_enum, default_value_t = SupportAgg::default())]
+        support_agg: SupportAgg,
         /// Optional output path for the metrics markdown. Default: stdout.
         #[arg(long)]
         output: Option<PathBuf>,
@@ -295,7 +331,14 @@ fn real_main() -> Result<ExitCode> {
             output,
             real_nli,
             nli_model,
-        } => run_command(&dataset, output.as_deref(), real_nli, nli_model.as_deref()),
+            support_agg,
+        } => run_command(
+            &dataset,
+            output.as_deref(),
+            real_nli,
+            nli_model.as_deref(),
+            support_agg,
+        ),
         Command::Compare {
             dataset,
             candidate_nli,
@@ -311,8 +354,15 @@ fn real_main() -> Result<ExitCode> {
             dataset,
             real_nli,
             nli_model,
+            support_agg,
             output,
-        } => metrics_command(&dataset, real_nli, nli_model.as_deref(), output.as_deref()),
+        } => metrics_command(
+            &dataset,
+            real_nli,
+            nli_model.as_deref(),
+            support_agg,
+            output.as_deref(),
+        ),
         Command::Latency {
             dataset,
             real_nli,
@@ -492,6 +542,7 @@ fn run_command(
     output: Option<&std::path::Path>,
     real_nli: bool,
     nli_model: Option<&str>,
+    support_agg: SupportAgg,
 ) -> Result<ExitCode> {
     let dataset = load_dataset_path(dataset_path).context("loading dataset")?;
     let mode = if real_nli {
@@ -502,7 +553,11 @@ fn run_command(
     if nli_model.is_some() && !real_nli {
         eprintln!("warning: --nli-model is ignored without --real-nli");
     }
-    let rows = run_with_model(&dataset, mode, nli_model).context("running eval")?;
+    if support_agg != SupportAgg::default() && !real_nli {
+        eprintln!("warning: --support-agg is ignored without --real-nli");
+    }
+    let rows =
+        run_with_options(&dataset, mode, nli_model, support_agg.into()).context("running eval")?;
     let report = Report::new(rows);
     let md = write_markdown(&report);
 
@@ -553,6 +608,7 @@ fn metrics_command(
     dataset_path: &std::path::Path,
     real_nli: bool,
     nli_model: Option<&str>,
+    support_agg: SupportAgg,
     output: Option<&std::path::Path>,
 ) -> Result<ExitCode> {
     let dataset = load_dataset_path(dataset_path).context("loading dataset")?;
@@ -564,7 +620,11 @@ fn metrics_command(
     if nli_model.is_some() && !real_nli {
         eprintln!("warning: --nli-model is ignored without --real-nli");
     }
-    let rows = run_with_model(&dataset, mode, nli_model).context("running eval")?;
+    if support_agg != SupportAgg::default() && !real_nli {
+        eprintln!("warning: --support-agg is ignored without --real-nli");
+    }
+    let rows =
+        run_with_options(&dataset, mode, nli_model, support_agg.into()).context("running eval")?;
     let md = rule_metrics(&rows);
     if let Some(out_path) = output {
         std::fs::write(out_path, md.as_bytes()).context("writing metrics")?;

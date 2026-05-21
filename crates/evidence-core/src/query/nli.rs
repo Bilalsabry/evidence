@@ -239,21 +239,115 @@ impl NliCrossEncoder {
     }
 }
 
-/// [`SupportChecker`] backed by an [`NliCrossEncoder`]. Classifies each
-/// cited span individually, then aggregates verdicts: any `Contradicts`
-/// wins, else any `Neutral` wins, else `Supports`. This "strict-wins"
-/// aggregation is more conservative than a true majority vote — it refuses
-/// the answer if even one cited span looks bad. The trade-off is by
-/// design: we'd rather refuse a marginal answer than ship a confidently
-/// wrong one.
+/// Separator joining cited span texts into one premise under
+/// [`SupportAggregation::Concatenated`]. A bare space keeps the premise
+/// readable to the model; the spans already end with their own
+/// punctuation in practice.
+const CONCAT_SEPARATOR: &str = " ";
+
+/// How an [`NliSupportChecker`] combines the per-span evidence into a
+/// single verdict.
+///
+/// `StrictWins` (the default) classifies each cited span independently
+/// and lets the worst verdict win — any `Contradicts` sinks the answer,
+/// else any `Neutral`, else `Supports`. It is the paper's shipping
+/// behavior and the conservative choice: refuse a marginal answer rather
+/// than ship a confidently wrong one.
+///
+/// `Concatenated` joins every cited span into ONE premise and makes a
+/// single `classify` call; the verdict is whatever that call returns.
+/// This lets evidence that is split across spans (each individually
+/// `Neutral`) jointly entail a claim — the multi-span false-refusal the
+/// `aggregation-ablation` doc measures. It is an optional mode, not the
+/// default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SupportAggregation {
+    /// Per-span strict-wins (default): worst single-span verdict wins.
+    #[default]
+    StrictWins,
+    /// Concatenate all cited spans into one premise, single NLI call.
+    Concatenated,
+}
+
+/// [`SupportChecker`] backed by an [`NliCrossEncoder`].
+///
+/// The aggregation strategy is selectable via [`SupportAggregation`];
+/// the default ([`NliSupportChecker::new`]) is per-span strict-wins,
+/// which classifies each cited span individually and lets the worst
+/// verdict win. Use [`NliSupportChecker::with_aggregation`] to opt into
+/// concatenated-evidence (single NLI call over the joined spans).
 pub struct NliSupportChecker<'a> {
     encoder: &'a NliCrossEncoder,
+    aggregation: SupportAggregation,
 }
 
 impl<'a> NliSupportChecker<'a> {
+    /// Build a checker with the default per-span strict-wins aggregation.
     #[must_use]
     pub fn new(encoder: &'a NliCrossEncoder) -> Self {
-        Self { encoder }
+        Self {
+            encoder,
+            aggregation: SupportAggregation::StrictWins,
+        }
+    }
+
+    /// Build a checker with an explicit [`SupportAggregation`] mode.
+    #[must_use]
+    pub fn with_aggregation(encoder: &'a NliCrossEncoder, aggregation: SupportAggregation) -> Self {
+        Self {
+            encoder,
+            aggregation,
+        }
+    }
+
+    /// Per-span strict-wins: any `Contradicts` wins, else any `Neutral`,
+    /// else `Supports`.
+    fn check_strict_wins(
+        &self,
+        sentence: &str,
+        cited_texts: &[&str],
+    ) -> Result<SupportVerdict, SupportError> {
+        let mut verdicts = Vec::with_capacity(cited_texts.len());
+        for span in cited_texts {
+            verdicts.push(self.encoder.classify(span, sentence)?);
+        }
+        Ok(combine_strict_wins(&verdicts))
+    }
+
+    /// Concatenated-evidence: join the cited spans into one premise and
+    /// make a single NLI call; that call's verdict is the result.
+    fn check_concatenated(
+        &self,
+        sentence: &str,
+        cited_texts: &[&str],
+    ) -> Result<SupportVerdict, SupportError> {
+        let premise = concat_premise(cited_texts);
+        Ok(self.encoder.classify(&premise, sentence)?)
+    }
+}
+
+/// Join cited spans into a single premise for concatenated-evidence
+/// aggregation.
+fn concat_premise(cited_texts: &[&str]) -> String {
+    cited_texts.join(CONCAT_SEPARATOR)
+}
+
+/// Strict-wins reduction over per-span verdicts: any `Contradicts` wins,
+/// else any `Supports`, else `Neutral`. (Pulled out as a pure function so
+/// the aggregation can be unit-tested without a real ort session.)
+fn combine_strict_wins(verdicts: &[SupportVerdict]) -> SupportVerdict {
+    let mut has_supports = false;
+    for v in verdicts {
+        match v {
+            SupportVerdict::Contradicts => return SupportVerdict::Contradicts,
+            SupportVerdict::Supports => has_supports = true,
+            SupportVerdict::Neutral => {}
+        }
+    }
+    if has_supports {
+        SupportVerdict::Supports
+    } else {
+        SupportVerdict::Neutral
     }
 }
 
@@ -262,19 +356,10 @@ impl<'a> SupportChecker for NliSupportChecker<'a> {
         if cited_texts.is_empty() {
             return Ok(SupportVerdict::Neutral);
         }
-        let mut has_supports = false;
-        for span in cited_texts {
-            match self.encoder.classify(span, sentence)? {
-                SupportVerdict::Contradicts => return Ok(SupportVerdict::Contradicts),
-                SupportVerdict::Supports => has_supports = true,
-                SupportVerdict::Neutral => {}
-            }
+        match self.aggregation {
+            SupportAggregation::StrictWins => self.check_strict_wins(sentence, cited_texts),
+            SupportAggregation::Concatenated => self.check_concatenated(sentence, cited_texts),
         }
-        Ok(if has_supports {
-            SupportVerdict::Supports
-        } else {
-            SupportVerdict::Neutral
-        })
     }
 }
 
@@ -408,5 +493,70 @@ mod tests {
             s.argmax_to_verdict(&[1.0, 1.0, 5.0]),
             SupportVerdict::Contradicts
         );
+    }
+
+    #[test]
+    fn aggregation_default_is_strict_wins() {
+        assert_eq!(
+            SupportAggregation::default(),
+            SupportAggregation::StrictWins
+        );
+    }
+
+    // --- strict-wins reduction (per-span aggregation) ---------------------
+
+    #[test]
+    fn strict_wins_contradiction_sinks_everything() {
+        // Even with supports present, a single Contradicts wins.
+        assert_eq!(
+            combine_strict_wins(&[
+                SupportVerdict::Supports,
+                SupportVerdict::Contradicts,
+                SupportVerdict::Supports,
+            ]),
+            SupportVerdict::Contradicts
+        );
+    }
+
+    #[test]
+    fn strict_wins_neutral_blocks_supports() {
+        // No contradiction, but a lone Neutral means we don't reach
+        // Supports — the verdict is Supports only if at least one span
+        // supports AND none is worse. Here one span supports, none
+        // contradicts, so the result is Supports.
+        assert_eq!(
+            combine_strict_wins(&[SupportVerdict::Neutral, SupportVerdict::Supports]),
+            SupportVerdict::Supports
+        );
+        // All-neutral stays Neutral.
+        assert_eq!(
+            combine_strict_wins(&[SupportVerdict::Neutral, SupportVerdict::Neutral]),
+            SupportVerdict::Neutral
+        );
+    }
+
+    #[test]
+    fn strict_wins_all_support() {
+        assert_eq!(
+            combine_strict_wins(&[SupportVerdict::Supports, SupportVerdict::Supports]),
+            SupportVerdict::Supports
+        );
+    }
+
+    // --- concatenated-evidence premise joining ----------------------------
+
+    #[test]
+    fn concat_premise_joins_with_separator() {
+        assert_eq!(
+            concat_premise(&["dose is 5 mg.", "given once daily."]),
+            "dose is 5 mg. given once daily."
+        );
+    }
+
+    #[test]
+    fn concat_premise_single_span_is_passthrough() {
+        // A single cited span concatenates to itself — concatenated mode
+        // degenerates to a single-span strict check when there's one span.
+        assert_eq!(concat_premise(&["only one span"]), "only one span");
     }
 }

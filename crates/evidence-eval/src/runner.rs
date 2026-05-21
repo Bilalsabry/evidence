@@ -10,7 +10,8 @@ use std::collections::HashMap;
 
 use evidence_core::query::{
     validate_answer, ChunkContext, NliCrossEncoder, NliSupportChecker, Prompt, QueryError,
-    RawAnswer, RawSentence, SupportChecker, SupportError, SupportVerdict, ValidationPolicy,
+    RawAnswer, RawSentence, SupportAggregation, SupportChecker, SupportError, SupportVerdict,
+    ValidationPolicy,
 };
 use evidence_core::storage::Storage;
 use rusqlite::params;
@@ -151,6 +152,28 @@ pub fn run_with_model(
     mode: SupportMode,
     nli_model: Option<&str>,
 ) -> anyhow::Result<Vec<RunResult>> {
+    run_with_options(dataset, mode, nli_model, SupportAggregation::default())
+}
+
+/// Like [`run_with_model`] but also selects the support gate's
+/// [`SupportAggregation`] mode used by the real NLI checker.
+/// `SupportAggregation::StrictWins` (the default) reproduces
+/// [`run_with_model`]; `SupportAggregation::Concatenated` joins each
+/// sentence's cited spans into one premise and does a single NLI call —
+/// the concatenated-evidence ablation. The aggregation only affects
+/// [`SupportMode::RealNli`]; under [`SupportMode::Mock`] the class-derived
+/// mock is unchanged.
+///
+/// # Errors
+///
+/// Returns an error if dataset seeding fails or — under
+/// [`SupportMode::RealNli`] — the NLI model fails to initialize.
+pub fn run_with_options(
+    dataset: &Dataset,
+    mode: SupportMode,
+    nli_model: Option<&str>,
+    aggregation: SupportAggregation,
+) -> anyhow::Result<Vec<RunResult>> {
     // A custom repo gets an owned encoder scoped to this call; the
     // default reuses the cached process-wide instance. Either way the
     // checker borrows it for the loop below — no `'static` needed.
@@ -180,7 +203,8 @@ pub fn run_with_model(
             // The checker is only consulted when the policy is ThreeGate
             // *and* it's `Some`. For non-ThreeGate policies we still pass
             // it so the harness's shape stays uniform.
-            let (mock_owner, nli_checker_owner) = build_checker(mode, nli_encoder, example.class);
+            let (mock_owner, nli_checker_owner) =
+                build_checker(mode, nli_encoder, aggregation, example.class);
             let checker_ref: Option<&dyn SupportChecker> = mock_owner
                 .as_deref()
                 .or_else(|| nli_checker_owner.as_ref().map(|c| c as &dyn SupportChecker));
@@ -210,6 +234,7 @@ pub fn run_with_model(
 fn build_checker<'e>(
     mode: SupportMode,
     nli_encoder: Option<&'e NliCrossEncoder>,
+    aggregation: SupportAggregation,
     class: HallucinationClass,
 ) -> (
     Option<Box<dyn SupportChecker>>,
@@ -219,7 +244,10 @@ fn build_checker<'e>(
         SupportMode::Mock => (mock_support_for(class), None),
         SupportMode::RealNli => {
             let encoder = nli_encoder.expect("RealNli mode loaded the encoder up front");
-            (None, Some(NliSupportChecker::new(encoder)))
+            (
+                None,
+                Some(NliSupportChecker::with_aggregation(encoder, aggregation)),
+            )
         }
     }
 }

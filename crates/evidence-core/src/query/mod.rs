@@ -24,7 +24,9 @@ pub mod nli;
 pub mod support;
 pub mod testing;
 
-pub use nli::{NliCrossEncoder, NliError, NliSupportChecker, DEFAULT_NLI_MODEL_REPO};
+pub use nli::{
+    NliCrossEncoder, NliError, NliSupportChecker, SupportAggregation, DEFAULT_NLI_MODEL_REPO,
+};
 pub use support::{
     RerankerSupportChecker, SupportChecker, SupportError, SupportVerdict, SUPPORTED_THRESHOLD,
 };
